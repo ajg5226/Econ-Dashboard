@@ -252,28 +252,33 @@ if 'Actual_Recession' in predictions_df.columns:
     prob_cols = [col for col in predictions_df.columns if col.startswith('Prob_')]
 
     if prob_cols:
-        cols = st.columns(len(prob_cols))
+        # Filter to rows with known actuals (exclude nowcast months where Actual_Recession is NaN)
+        eval_df = predictions_df.dropna(subset=['Actual_Recession'])
+        if len(eval_df) == 0:
+            st.warning("No rows with known recession outcomes available for confusion matrices.")
+        else:
+            cols = st.columns(len(prob_cols))
 
-        for idx, prob_col in enumerate(prob_cols):
-            with cols[idx]:
-                model_name = prob_col.replace('Prob_', '').replace('_', ' ').title()
-                st.markdown(f"**{model_name}**")
+            for idx, prob_col in enumerate(prob_cols):
+                with cols[idx]:
+                    model_name = prob_col.replace('Prob_', '').replace('_', ' ').title()
+                    st.markdown(f"**{model_name}**")
 
-                y_true = predictions_df['Actual_Recession'].values
-                y_pred_proba = predictions_df[prob_col].values
-                y_pred = (y_pred_proba >= threshold).astype(int)
+                    y_true = eval_df['Actual_Recession'].values.astype(int)
+                    y_pred_proba = eval_df[prob_col].values.astype(float)
+                    y_pred = (y_pred_proba >= threshold).astype(int)
 
-                cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
+                    cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
 
-                cm_df = pd.DataFrame(
-                    cm,
-                    index=['No Recession', 'Recession'],
-                    columns=['Predicted No', 'Predicted Yes']
-                )
-                st.dataframe(cm_df, use_container_width=True)
+                    cm_df = pd.DataFrame(
+                        cm,
+                        index=['No Recession', 'Recession'],
+                        columns=['Predicted No', 'Predicted Yes']
+                    )
+                    st.dataframe(cm_df, use_container_width=True)
 
-                tn, fp, fn, tp = cm.ravel()
-                st.caption(f"TP: {tp}, FP: {fp}, FN: {fn}, TN: {tn}")
+                    tn, fp, fn, tp = cm.ravel()
+                    st.caption(f"TP: {tp}, FP: {fp}, FN: {fn}, TN: {tn}")
 
     # ── Data Split Info ───────────────────────────────────────────────────────
     st.markdown("---")
@@ -286,9 +291,13 @@ if 'Actual_Recession' in predictions_df.columns:
         st.info(f"**Date Range:** {predictions_df.index.min().strftime('%Y-%m-%d')} to {predictions_df.index.max().strftime('%Y-%m-%d')}")
 
     with col2:
-        recession_count = int(predictions_df['Actual_Recession'].sum())
+        known_df = predictions_df.dropna(subset=['Actual_Recession'])
+        recession_count = int(known_df['Actual_Recession'].sum())
+        nowcast_count = len(predictions_df) - len(known_df)
         st.info(f"**Recession Months:** {recession_count}")
-        st.info(f"**Non-Recession Months:** {len(predictions_df) - recession_count}")
+        st.info(f"**Non-Recession Months:** {len(known_df) - recession_count}")
+        if nowcast_count > 0:
+            st.info(f"**Nowcast Months (no actuals):** {nowcast_count}")
         if len(predictions_df) > 0:
             st.info(f"**Recession Rate:** {recession_count / len(predictions_df):.1%}")
 

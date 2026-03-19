@@ -84,8 +84,39 @@ def main():
     
     # Main header
     st.markdown('<p class="main-header">📊 Recession Prediction Dashboard</p>', unsafe_allow_html=True)
-    
-    # Show dashboard by default (Streamlit will handle page routing)
+
+    # Landing page content
+    st.markdown("""
+    Welcome to the **Recession Prediction Dashboard** — a quantitative forecasting system
+    that estimates the probability of a U.S. recession within the next 6 months.
+
+    ### How It Works
+    The engine combines **26 economic indicators** from the Federal Reserve (FRED) with
+    literature-backed feature engineering to produce calibrated recession probabilities:
+
+    - **Yield curve dynamics** — term spread inversion depth, duration, and momentum (Estrella & Mishkin 1998, Engstrom & Sharpe 2019)
+    - **Monetary policy stance** — federal funds rate interactions (Wright 2006)
+    - **Credit & financial stress** — Baa spreads, TED spread, Chicago Fed NFCI (Gilchrist & Zakrajsek 2012)
+    - **Labor market** — Sahm Rule unemployment trigger (Sahm 2019)
+    - **At-risk transformation** — percentile-based weakness flags across all indicators (Billakanti & Shin 2025, Philadelphia Fed)
+
+    Three base models — **L1-Logistic (Probit)**, **Random Forest**, and **XGBoost** — are
+    calibrated with isotonic regression and combined using performance-weighted (inverse Brier score)
+    ensembling with bootstrap confidence intervals.
+
+    ### Pages
+    - **Dashboard** — Current recession probability, confidence intervals, and peer model comparison
+    - **Indicators** — Explore all 28+ economic indicators and derived features
+    - **Model Performance** — Evaluation metrics, backtesting, and model monitoring
+    - **Settings** — Data refresh, cache management, and user administration
+
+    ### Data & Scheduling
+    Data is refreshed weekly via automated pipeline. The model retrains on each refresh
+    using an expanding training window, ensuring the latest economic conditions are incorporated.
+
+    *Use the sidebar to navigate between pages.*
+    """)
+
     # Pages are automatically discovered from app/pages/ directory
 
 
