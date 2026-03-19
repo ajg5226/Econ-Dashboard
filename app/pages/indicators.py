@@ -141,8 +141,9 @@ st.sidebar.markdown("### Filters")
 categories = ['All', 'Leading', 'Coincident', 'Lagging']
 selected_category = st.sidebar.selectbox("Indicator Category", categories)
 
-# Indicator selector
-available_indicators = [col for col in indicators_df.columns if col != 'RECESSION']
+# Indicator selector — show only raw indicators (not engineered features)
+available_indicators = [col for col in indicators_df.columns
+                        if col in INDICATOR_DESCRIPTIONS]
 
 if selected_category != 'All':
     available_indicators = [
@@ -170,6 +171,15 @@ if selected_indicator in INDICATOR_DESCRIPTIONS:
     st.markdown(f"**Category:** {info['category']}")
     st.info(info['description'])
 
+    # Warn if indicator data is stale (last valid > 6 months old)
+    last_valid = indicators_df[selected_indicator].last_valid_index()
+    if last_valid is not None:
+        from datetime import datetime
+        staleness_days = (pd.Timestamp.now() - last_valid).days
+        if staleness_days > 180:
+            st.warning(f"⚠️ This indicator has not been updated since {last_valid.strftime('%Y-%m')}. "
+                       f"It may be discontinued or delayed.")
+
 # Plot indicator
 st.markdown("---")
 st.markdown("### Time Series")
@@ -195,26 +205,28 @@ if indicators_df.empty or selected_indicator not in indicators_df.columns:
 
 with col1:
     try:
-        current_val = indicators_df[selected_indicator].iloc[-1]
-        if pd.isna(current_val):
-            st.metric("Current Value", "N/A")
+        # Use last valid (non-null) value instead of last row
+        series = indicators_df[selected_indicator].dropna()
+        if len(series) > 0:
+            current_val = series.iloc[-1]
+            current_date = series.index[-1]
+            st.metric("Current Value", f"{current_val:,.2f}",
+                       help=f"As of {current_date.strftime('%Y-%m')}")
         else:
-            st.metric("Current Value", f"{current_val:,.2f}")
+            st.metric("Current Value", "N/A")
     except (IndexError, KeyError):
         st.metric("Current Value", "N/A")
 
 with col2:
     try:
-        if len(indicators_df) >= 12:
-            current = indicators_df[selected_indicator].iloc[-1]
-            past = indicators_df[selected_indicator].iloc[-12]
-            if pd.notna(current) and pd.notna(past):
-                change = current - past
-            else:
-                change = 0
+        series = indicators_df[selected_indicator].dropna()
+        if len(series) >= 12:
+            current = series.iloc[-1]
+            past = series.iloc[-12]
+            change = current - past
+            st.metric("YoY Change", f"{change:,.2f}")
         else:
-            change = 0
-        st.metric("YoY Change", f"{change:,.2f}")
+            st.metric("YoY Change", "N/A")
     except (IndexError, KeyError):
         st.metric("YoY Change", "N/A")
 
@@ -247,7 +259,9 @@ st.markdown("### Recent Data")
 if indicators_df.empty or selected_indicator not in indicators_df.columns:
     st.warning("⚠️ No data available to display")
 else:
-    recent_data = indicators_df[[selected_indicator]].tail(12)
+    # Show last 12 non-null values to avoid trailing NaN rows
+    valid_data = indicators_df[[selected_indicator]].dropna()
+    recent_data = valid_data.tail(12)
     if recent_data.empty:
         st.info("No recent data available")
     else:

@@ -92,16 +92,16 @@ def run_update_job(horizon_months=6, train_end_date='2015-12-31'):
         
         logger.info("✓ Raw data: %d months, %d indicators", df_raw.shape[0], df_raw.shape[1])
         
-        # Save raw indicators
-        save_indicators(df_raw)
-        
         # STEP 2: FEATURE ENGINEERING
         logger.info("=" * 100)
         logger.info("STEP 2: FEATURE ENGINEERING")
         logger.info("=" * 100)
-        
+
         df_features = acq.engineer_features(df_raw)
         logger.info("✓ Engineered %d features", df_features.shape[1])
+
+        # Save indicators WITH engineered features (needed by Indicators page)
+        save_indicators(df_features)
         
         # STEP 3: CREATE TARGET
         logger.info("=" * 100)

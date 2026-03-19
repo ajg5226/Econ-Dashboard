@@ -125,6 +125,9 @@ class RecessionDataAcquisition:
             # Volatility
             df_eng[f'{col}_Vol6M'] = df[col].rolling(6).std()
         
+        # Replace inf values from pct_change (division by zero when indicators cross zero)
+        df_eng = df_eng.replace([np.inf, -np.inf], np.nan)
+
         logger.info(f"Feature engineering complete: {len(df_eng.columns)} features")
         return df_eng
     
