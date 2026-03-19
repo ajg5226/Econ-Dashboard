@@ -159,7 +159,8 @@ class RecessionEnsembleModel:
         2. Rank by Random Forest importance on the candidates
         """
         exclude_cols = [self.target_col, 'RECESSION']
-        feature_cols = [col for col in df.columns if col not in exclude_cols]
+        feature_cols = [col for col in df.columns
+                        if col not in exclude_cols and not col.startswith('ref_')]
 
         # Require 70% non-null
         valid_cols = [col for col in feature_cols

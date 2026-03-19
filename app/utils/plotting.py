@@ -27,6 +27,7 @@ def plot_recession_probability(
     end_date: str = None,
     ci_lower: np.ndarray = None,
     ci_upper: np.ndarray = None,
+    peer_models: dict = None,
 ):
     """
     Create interactive recession probability chart
@@ -128,6 +129,27 @@ def plot_recession_probability(
                 hovertemplate=f'<b>{model_name}</b><br>Date: %{{x}}<br>Probability: %{{y:.1%}}<extra></extra>'
             ))
     
+    # Plot peer/reference model probabilities (if provided)
+    if peer_models:
+        peer_colors = ['#8c564b', '#7f7f7f', '#bcbd22']  # Brown, gray, olive
+        for i, (peer_name, peer_proba) in enumerate(peer_models.items()):
+            peer_array = np.array(peer_proba)
+            # Adjust length to match df
+            if len(peer_array) != len(df):
+                if len(peer_array) > len(df):
+                    peer_array = peer_array[:len(df)]
+                else:
+                    peer_array = np.pad(peer_array, (0, len(df) - len(peer_array)), mode='edge')
+            fig.add_trace(go.Scatter(
+                x=df.index,
+                y=peer_array,
+                mode='lines',
+                name=f'📌 {peer_name}',
+                line=dict(color=peer_colors[i % len(peer_colors)], width=2, dash='dot'),
+                opacity=0.8,
+                hovertemplate=f'<b>{peer_name}</b><br>Date: %{{x}}<br>Probability: %{{y:.1%}}<extra></extra>'
+            ))
+
     # Shade recession periods
     recession_periods = df[df['RECESSION'] == 1]
     for idx in recession_periods.index:
@@ -139,7 +161,7 @@ def plot_recession_probability(
             layer="below",
             line_width=0,
         )
-    
+
     # Add threshold line
     fig.add_hline(
         y=0.5,

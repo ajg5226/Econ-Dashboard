@@ -5,6 +5,7 @@ Displays recession probability forecasts and key metrics
 
 import streamlit as st
 import pandas as pd
+import numpy as np
 import sys
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -205,6 +206,19 @@ if 'Prob_RandomForest' in filtered_df.columns:
 if 'Prob_XGBoost' in filtered_df.columns:
     predictions_dict['xgboost'] = filtered_df['Prob_XGBoost'].values
 
+# Collect peer/reference model data
+peer_models = {}
+if 'Ref_RECPROUSM156N' in filtered_df.columns:
+    ref_series = filtered_df['Ref_RECPROUSM156N'].values.astype(float)
+    if not np.isnan(ref_series).all():
+        # RECPROUSM156N is on 0-100 scale, convert to 0-1
+        peer_models['NY Fed (Chauvet-Piger)'] = ref_series / 100.0
+if 'Ref_JHGDPBRINDX' in filtered_df.columns:
+    ref_series = filtered_df['Ref_JHGDPBRINDX'].values.astype(float)
+    if not np.isnan(ref_series).all():
+        # Hamilton GDP indicator is 0-100 scale, convert to 0-1
+        peer_models['Hamilton GDP Index'] = ref_series / 100.0
+
 # Create recession indicator series
 # BUG FIX 7: Fix get() returning scalar instead of Series
 if 'Actual_Recession' in filtered_df.columns:
@@ -231,9 +245,26 @@ fig = plot_recession_probability(
     end_date=end_date_str,
     ci_lower=ci_lower,
     ci_upper=ci_upper,
+    peer_models=peer_models if peer_models else None,
 )
 
 st.plotly_chart(fig, use_container_width=True)
+
+# Peer model comparison callout
+if peer_models:
+    st.markdown("#### Peer Model Comparison")
+    peer_cols = st.columns(len(peer_models) + 1)
+    with peer_cols[0]:
+        st.metric("Our Ensemble", f"{latest_prob:.1%}")
+    for i, (peer_name, peer_vals) in enumerate(peer_models.items()):
+        with peer_cols[i + 1]:
+            peer_latest = peer_vals[~pd.isna(peer_vals)][-1] if not pd.isna(peer_vals).all() else None
+            if peer_latest is not None:
+                st.metric(peer_name, f"{peer_latest:.1%}",
+                          delta=f"{(latest_prob - peer_latest):+.1%}",
+                          delta_color="off")
+            else:
+                st.metric(peer_name, "N/A")
 
 # Summary table
 st.markdown("---")

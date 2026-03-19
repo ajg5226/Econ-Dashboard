@@ -308,6 +308,84 @@ if 'Actual_Recession' in predictions_df.columns:
                       help="Max - min probability across base models (epistemic uncertainty)")
         st.caption(f"Method: {ci_info.get('method', 'N/A')} ({ci_info.get('n_bootstrap', 'N/A')} samples)")
 
+    # ── Model Monitoring & Drift Detection ────────────────────────────────────
+    monitor_report = {}
+    monitor_file = DATA_DIR / "monitor_report.json"
+    if monitor_file.exists():
+        try:
+            with open(monitor_file) as f:
+                monitor_report = json.load(f)
+        except Exception:
+            pass
+
+    if monitor_report:
+        st.markdown("---")
+        st.markdown("### Model Monitoring")
+
+        status = monitor_report.get('status', 'UNKNOWN')
+        alert_count = monitor_report.get('alert_count', 0)
+        timestamp = monitor_report.get('timestamp', 'N/A')
+
+        if status == 'OK':
+            st.success(f"**Status: ✅ All Checks Passed** — Last run: {timestamp[:19]}")
+        else:
+            st.warning(f"**Status: ⚠️ {alert_count} Alert(s)** — Last run: {timestamp[:19]}")
+
+        checks = monitor_report.get('checks', {})
+
+        # Display checks in a grid
+        mon_cols = st.columns(3)
+
+        # Prediction stability
+        stability = checks.get('prediction_stability', {})
+        with mon_cols[0]:
+            st.markdown("**Prediction Stability**")
+            details = stability.get('details', {})
+            vol = details.get('current_6m_vol')
+            mom = details.get('last_mom_change')
+            if vol is not None:
+                st.metric("6M Rolling Vol", f"{vol:.4f}")
+            if mom is not None:
+                st.metric("Last MoM Change", f"{mom:.1%}")
+
+        # Model disagreement
+        disagreement = checks.get('model_disagreement', {})
+        with mon_cols[1]:
+            st.markdown("**Model Disagreement**")
+            details = disagreement.get('details', {})
+            spread = details.get('current_spread')
+            if spread is not None:
+                st.metric("Current Spread", f"{spread:.1%}")
+            preds = details.get('model_predictions', {})
+            if preds:
+                for m, p in preds.items():
+                    st.caption(f"{m}: {p:.1%}")
+
+        # Feature drift
+        drift = checks.get('feature_drift', {})
+        with mon_cols[2]:
+            st.markdown("**Feature Drift (PSI)**")
+            details = drift.get('details', {})
+            checked = details.get('features_checked', 0)
+            drifted = details.get('features_drifted', 0)
+            mean_psi = details.get('mean_psi', 0)
+            if checked > 0:
+                st.metric("Features Checked", checked)
+                st.metric("Drifted (PSI > 0.20)", drifted)
+                st.caption(f"Mean PSI: {mean_psi:.4f}")
+            top_drifted = details.get('top_drifted', {})
+            if top_drifted:
+                st.caption("Top drifted: " + ", ".join(f"{k}={v}" for k, v in list(top_drifted.items())[:3]))
+
+        # Show alerts if any
+        alerts = monitor_report.get('alerts', [])
+        if alerts:
+            with st.expander(f"⚠️ {len(alerts)} Alert(s)", expanded=True):
+                for alert in alerts:
+                    level = alert.get('level', 'INFO')
+                    icon = '🔴' if level == 'WARNING' else 'ℹ️'
+                    st.markdown(f"{icon} **[{alert.get('check', '')}]** {alert.get('message', '')}")
+
     # ── Historical Backtest Results ───────────────────────────────────────────
     if backtest_df is not None and not backtest_df.empty:
         st.markdown("---")

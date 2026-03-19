@@ -79,6 +79,11 @@ class RecessionDataAcquisition:
                 'NFCI': 'Chicago Fed National Financial Conditions Index',
                 'ANFCI': 'Chicago Fed Adjusted NFCI',
             },
+            # Peer/reference models (for benchmarking, not used as features)
+            'reference': {
+                'RECPROUSM156N': 'Chauvet-Piger Smoothed Recession Probabilities (NY Fed)',
+                'JHGDPBRINDX': 'GDP-Based Recession Indicator Index (Hamilton)',
+            },
             'target': {
                 'USREC': 'NBER Recession Indicator',
             }
@@ -104,7 +109,11 @@ class RecessionDataAcquisition:
                         observation_start=start_date,
                         observation_end=end_date
                     )
-                    all_data[f"{category}_{series_id}"] = series
+                    # Reference models use bare series_id (not prefixed) for clarity
+                    if category == 'reference':
+                        all_data[f"ref_{series_id}"] = series
+                    else:
+                        all_data[f"{category}_{series_id}"] = series
                     logger.info(f"  ✓ {description} ({len(series)} obs)")
                 except Exception as e:
                     logger.warning(f"  ✗ Failed {series_id}: {str(e)}")
@@ -153,7 +162,9 @@ class RecessionDataAcquisition:
         logger.info("Engineering features...")
 
         df_eng = df.copy()
-        indicator_cols = [col for col in df.columns if col != 'RECESSION']
+        # Exclude RECESSION and reference model columns from feature engineering
+        indicator_cols = [col for col in df.columns
+                          if col != 'RECESSION' and not col.startswith('ref_')]
 
         # ── Tier 1: Standard transforms ──────────────────────────────
         for col in indicator_cols:

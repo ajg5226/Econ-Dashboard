@@ -11,28 +11,28 @@ credentials:
       failed_login_attempts: 0
       logged_in: false
       name: Analyst 1
-      password: temppass123
+      password: $2b$12$GV7uRyIau./yAj.sun8bfeHZ4IrQlp1i5pNEIg42gopY.0UzkFo.q
       role: viewer
     analyst2:
       email: analyst2@team.com
       failed_login_attempts: 0
       logged_in: false
       name: Analyst 2
-      password: temppass123
+      password: $2b$12$GV7uRyIau./yAj.sun8bfeHZ4IrQlp1i5pNEIg42gopY.0UzkFo.q
       role: viewer
     analyst3:
       email: analyst3@team.com
       failed_login_attempts: 0
       logged_in: false
       name: Analyst 3
-      password: temppass123
+      password: $2b$12$GV7uRyIau./yAj.sun8bfeHZ4IrQlp1i5pNEIg42gopY.0UzkFo.q
       role: viewer
     analyst4:
       email: analyst4@team.com
       failed_login_attempts: 0
       logged_in: false
       name: Analyst 4
-      password: temppass123
+      password: $2b$12$GV7uRyIau./yAj.sun8bfeHZ4IrQlp1i5pNEIg42gopY.0UzkFo.q
       role: viewer
 cookie:
   expiry_days: 30

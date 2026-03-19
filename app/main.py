@@ -4,6 +4,7 @@ Handles authentication and routing to pages
 """
 
 import streamlit as st
+import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
@@ -11,8 +12,18 @@ from dotenv import load_dotenv
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Load environment variables
+# Load environment variables from .env (local dev)
 load_dotenv(Path(__file__).parent.parent / '.env')
+
+# Streamlit Cloud: secrets.toml overrides .env
+# This allows deployment without a .env file on Streamlit Community Cloud
+try:
+    if "FRED_API_KEY" in st.secrets:
+        os.environ["FRED_API_KEY"] = st.secrets["FRED_API_KEY"]
+    if "SECRET_KEY" in st.secrets:
+        os.environ["SECRET_KEY"] = st.secrets["SECRET_KEY"]
+except FileNotFoundError:
+    pass  # No secrets.toml — using .env instead (local dev)
 
 try:
     from app.auth import check_authentication, logout, get_user_role

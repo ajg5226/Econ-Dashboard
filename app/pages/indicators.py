@@ -207,14 +207,28 @@ DERIVED_DESCRIPTIONS = {
     },
 }
 
+# Peer/reference models (for benchmarking)
+REFERENCE_DESCRIPTIONS = {
+    'ref_RECPROUSM156N': {
+        'name': 'NY Fed Recession Probability (Chauvet-Piger)',
+        'description': 'Smoothed recession probabilities from the Chauvet-Piger Markov-switching model. Published by the NY Fed. Widely used benchmark for recession nowcasting.',
+        'category': 'Reference'
+    },
+    'ref_JHGDPBRINDX': {
+        'name': 'Hamilton GDP-Based Recession Index',
+        'description': 'GDP-based recession indicator index. Uses a nonlinear filter applied to real GDP growth. Values above 67% indicate recession. (Hamilton 2005)',
+        'category': 'Reference'
+    },
+}
+
 # Combine all descriptions
-ALL_DESCRIPTIONS = {**INDICATOR_DESCRIPTIONS, **DERIVED_DESCRIPTIONS}
+ALL_DESCRIPTIONS = {**INDICATOR_DESCRIPTIONS, **DERIVED_DESCRIPTIONS, **REFERENCE_DESCRIPTIONS}
 
 # Sidebar filters
 st.sidebar.markdown("### Filters")
 
 # Category filter
-categories = ['All', 'Leading', 'Coincident', 'Lagging', 'Monetary', 'Financial', 'Derived']
+categories = ['All', 'Leading', 'Coincident', 'Lagging', 'Monetary', 'Financial', 'Derived', 'Reference']
 selected_category = st.sidebar.selectbox("Indicator Category", categories)
 
 # Filter indicators by category

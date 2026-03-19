@@ -125,6 +125,34 @@ def run_update_job(horizon_months=6, train_end_date=None):
         model = RecessionEnsembleModel(target_horizon=horizon_months)
         train_df, test_df = model.prepare_data(df_final, train_end_date=train_end_date)
 
+        # STEP 4b: BUILD NOWCAST SET
+        # The test_df only contains rows with known forward targets. For a
+        # production dashboard we also need predictions on the most recent
+        # months where RECESSION_FORWARD_6M is NaN (the "nowcast" window).
+        #
+        # Critical: forward-fill features BEFORE slicing so that the last
+        # known indicator values carry into the nowcast months. Without this,
+        # features like PAYEMS/INDPRO that haven't been published yet would
+        # be NaN, and predict()'s .fillna(0) would replace them with zero —
+        # which the model interprets as economic collapse.
+        target_col = f'RECESSION_FORWARD_{horizon_months}M'
+        feature_cols_for_ffill = [c for c in df_final.columns
+                                  if c not in [target_col, 'RECESSION']
+                                  and not c.startswith('ref_')]
+        df_final[feature_cols_for_ffill] = df_final[feature_cols_for_ffill].ffill()
+
+        nowcast_mask = df_final[target_col].isna()
+        nowcast_df = df_final[nowcast_mask].copy()
+        nowcast_df = nowcast_df.replace([np.inf, -np.inf], np.nan)
+
+        if len(nowcast_df) > 0:
+            logger.info("Nowcast window: %d months (%s to %s)",
+                        len(nowcast_df),
+                        nowcast_df.index.min().strftime('%Y-%m'),
+                        nowcast_df.index.max().strftime('%Y-%m'))
+        else:
+            logger.info("No nowcast months (all months have known targets)")
+
         # STEP 5: MODEL TRAINING (with calibration + threshold optimization)
         logger.info("=" * 100)
         logger.info("STEP 5: MODEL TRAINING")
@@ -202,11 +230,20 @@ def run_update_job(horizon_months=6, train_end_date=None):
         metrics_df.to_csv(models_dir / "metrics.csv", index=False)
         logger.info("✓ Saved evaluation metrics")
 
+        # STEP 6b: NOWCAST PREDICTIONS (most recent months without known targets)
+        if len(nowcast_df) > 0:
+            logger.info("Generating nowcast predictions for %d months...", len(nowcast_df))
+            nowcast_ci = model.predict_with_confidence(nowcast_df, n_bootstrap=200, ci_level=0.90)
+            nowcast_preds = nowcast_ci['predictions']
+            logger.info("✓ Nowcast complete — latest probability: %.1f%%",
+                        nowcast_preds['ensemble'][-1] * 100)
+
         # STEP 7: SAVE PREDICTIONS (with confidence intervals)
         logger.info("=" * 100)
         logger.info("STEP 7: SAVING PREDICTIONS")
         logger.info("=" * 100)
 
+        # Build test-set predictions
         data_dict = {
             'Date': test_df.index,
             'Actual_Recession': test_df['RECESSION'].values,
@@ -222,6 +259,38 @@ def run_update_job(horizon_months=6, train_end_date=None):
             data_dict['Prob_XGBoost'] = predictions['xgboost']
 
         predictions_df = pd.DataFrame(data_dict)
+
+        # Append nowcast rows (most recent months, Actual_Recession = NaN)
+        if len(nowcast_df) > 0:
+            nowcast_dict = {
+                'Date': nowcast_df.index,
+                'Actual_Recession': nowcast_df['RECESSION'].values,
+                'Prob_Ensemble': nowcast_preds['ensemble'],
+                'Prob_Probit': nowcast_preds['probit'],
+                'Prob_RandomForest': nowcast_preds['random_forest'],
+                'CI_Lower': nowcast_ci['ensemble_ci_lower'],
+                'CI_Upper': nowcast_ci['ensemble_ci_upper'],
+                'CI_Std': nowcast_ci['ensemble_std'],
+                'Model_Spread': nowcast_ci['model_spread'],
+            }
+            if 'xgboost' in nowcast_preds:
+                nowcast_dict['Prob_XGBoost'] = nowcast_preds['xgboost']
+
+            nowcast_pred_df = pd.DataFrame(nowcast_dict)
+            predictions_df = pd.concat([predictions_df, nowcast_pred_df], ignore_index=True)
+            logger.info("✓ Appended %d nowcast months (through %s)",
+                        len(nowcast_df), nowcast_df.index.max().strftime('%Y-%m'))
+
+        # Add peer/reference model probabilities if available in the raw data
+        predictions_df_dates = pd.to_datetime(predictions_df['Date'])
+        for ref_col in ['ref_RECPROUSM156N', 'ref_JHGDPBRINDX']:
+            if ref_col in df_features.columns:
+                ref_series = df_features[ref_col].reindex(predictions_df_dates)
+                if ref_series.notna().any():
+                    col_name = ref_col.replace('ref_', 'Ref_')
+                    predictions_df[col_name] = ref_series.values
+                    logger.info(f"✓ Added reference series: {col_name}")
+
         save_predictions(predictions_df, test_df)
 
         # Save CI metadata
@@ -272,6 +341,37 @@ def run_update_job(horizon_months=6, train_end_date=None):
             import traceback
             traceback.print_exc()
 
+        # STEP 10: MODEL MONITORING
+        logger.info("=" * 100)
+        logger.info("STEP 10: MODEL MONITORING & DRIFT DETECTION")
+        logger.info("=" * 100)
+
+        try:
+            from recession_engine.model_monitor import ModelMonitor
+            monitor = ModelMonitor(data_dir=models_dir)
+
+            # Prepare predictions DataFrame with date index for monitoring
+            monitor_df = predictions_df.copy()
+            monitor_df['Date'] = pd.to_datetime(monitor_df['Date'])
+            monitor_df = monitor_df.set_index('Date').sort_index()
+
+            monitor_report = monitor.run_all_checks(
+                predictions_df=monitor_df,
+                indicators_df=df_features,
+                feature_cols=model.feature_cols,
+            )
+            monitor.save_report(monitor_report)
+
+            if monitor_report['alert_count'] > 0:
+                logger.warning("⚠ Model monitoring raised %d alert(s):", monitor_report['alert_count'])
+                for alert in monitor_report['alerts']:
+                    logger.warning("  [%s] %s: %s", alert['level'], alert['check'], alert['message'])
+            else:
+                logger.info("✓ All monitoring checks passed (no alerts)")
+
+        except Exception as e:
+            logger.warning("Model monitoring failed (non-fatal): %s", e)
+
         # FINAL SUMMARY
         logger.info("=" * 100)
         logger.info("UPDATE JOB COMPLETED SUCCESSFULLY!")
@@ -288,11 +388,21 @@ def run_update_job(horizon_months=6, train_end_date=None):
             logger.warning(f"Could not retrieve ensemble metrics: {str(e)}")
 
         try:
-            if 'ensemble' in predictions and len(predictions['ensemble']) > 0:
+            # Use nowcast probability if available, otherwise fall back to test set
+            if len(nowcast_df) > 0 and 'ensemble' in nowcast_preds:
+                latest_prob = nowcast_preds['ensemble'][-1]
+                latest_date = nowcast_df.index[-1].strftime('%Y-%m')
+            elif 'ensemble' in predictions and len(predictions['ensemble']) > 0:
                 latest_prob = predictions['ensemble'][-1]
+                latest_date = test_df.index[-1].strftime('%Y-%m')
+            else:
+                latest_prob = None
+                latest_date = 'N/A'
+
+            if latest_prob is not None:
                 logger.info(
-                    "Current %dM Recession Probability: %.1f%% (threshold: %.1f%%)",
-                    horizon_months, latest_prob * 100, model.decision_threshold * 100
+                    "Current %dM Recession Probability (%s): %.1f%% (threshold: %.1f%%)",
+                    horizon_months, latest_date, latest_prob * 100, model.decision_threshold * 100
                 )
             else:
                 logger.warning("Latest probability not available")
