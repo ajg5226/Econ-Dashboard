@@ -26,10 +26,10 @@ except FileNotFoundError:
     pass  # No secrets.toml — using .env instead (local dev)
 
 try:
-    from app.auth import check_authentication, logout, get_user_role
+    from app.auth import render_login, logout, get_user_role
 except ImportError:
     # Fallback for direct execution
-    from auth import check_authentication, logout, get_user_role
+    from auth import render_login, logout, get_user_role
 
 # Page configuration
 st.set_page_config(
@@ -58,8 +58,8 @@ st.markdown("""
 def main():
     """Main application function"""
     
-    # Check authentication
-    authenticated, username, name = check_authentication()
+    # Render login widget (only main.py does this — pages just check session state)
+    authenticated, username, name = render_login()
     
     if not authenticated:
         st.stop()

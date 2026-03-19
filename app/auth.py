@@ -1,6 +1,11 @@
 """
 Authentication module for Streamlit app
 Uses streamlit-authenticator for secure login
+
+Architecture for multi-page apps:
+- main.py calls `render_login()` to show the login widget (once)
+- Each page calls `check_authentication()` which only reads session state
+- This avoids duplicate widget key errors on Streamlit Cloud
 """
 
 import streamlit as st
@@ -71,53 +76,62 @@ def get_authenticator():
     return st.session_state['_authenticator'], st.session_state['_auth_config']
 
 
-def check_authentication():
+def render_login():
     """
-    Check if user is authenticated, redirect to login if not.
-    Only renders the login widget once (from main.py).
-    Pages just check session state.
+    Render the login widget. Call this ONLY from main.py.
+
+    In Streamlit multi-page apps, main.py runs before every page.
+    The login widget must be rendered exactly once per script run
+    to avoid duplicate widget key errors.
 
     Returns:
         Tuple of (authenticated: bool, username: str, name: str)
     """
     try:
-        authentication_status = st.session_state.get("authentication_status")
+        authenticator, config = get_authenticator()
 
-        # If already authenticated, just return the stored values
-        if authentication_status is True:
-            name = st.session_state.get("name")
-            username = st.session_state.get("username")
-            if username and name:
-                return True, username, name
+        # Render login widget (this also checks the auth cookie)
+        authenticator.login(location='main', key='Login')
 
-        # Not authenticated yet — only render login if not already rendered this run
-        if not st.session_state.get("_login_rendered"):
-            authenticator, config = get_authenticator()
-            authenticator.login(location='main')
-            st.session_state['_login_rendered'] = True
-
-        # Check result
         authentication_status = st.session_state.get("authentication_status")
         name = st.session_state.get("name")
         username = st.session_state.get("username")
 
-        if authentication_status is False:
+        if authentication_status is True and username and name:
+            return True, username, name
+        elif authentication_status is False:
             st.error('Username/password is incorrect')
             return False, None, None
-        elif authentication_status is None:
+        else:
             st.warning('Please enter your username and password')
             return False, None, None
-        elif authentication_status is True:
-            if username is None or name is None:
-                logger.warning("Authentication succeeded but username/name is None")
-                return False, None, None
-            return True, username, name
 
-        return False, None, None
     except Exception as e:
         logger.error(f"Error in authentication: {str(e)}")
         st.error(f"Authentication error: {str(e)}")
         return False, None, None
+
+
+def check_authentication():
+    """
+    Check if the user is authenticated by reading session state.
+    Call this from individual pages (dashboard.py, indicators.py, etc.).
+
+    Does NOT render any widgets — avoids duplicate key errors.
+
+    Returns:
+        Tuple of (authenticated: bool, username: str, name: str)
+    """
+    authentication_status = st.session_state.get("authentication_status")
+    name = st.session_state.get("name")
+    username = st.session_state.get("username")
+
+    if authentication_status is True and username and name:
+        return True, username, name
+
+    # Not authenticated — show message and let main.py handle login
+    st.warning("Please log in from the main page.")
+    return False, None, None
 
 
 def get_user_role(username: str) -> str:
@@ -168,4 +182,4 @@ def register_user(username: str, name: str, email: str, password: str, role: str
 def logout():
     """Handle user logout"""
     authenticator, _ = get_authenticator()
-    authenticator.logout('Logout', location='sidebar')
+    authenticator.logout('Logout', location='sidebar', key='Logout')
