@@ -22,22 +22,29 @@ except ImportError:
     from utils.plotting import plot_indicator_timeseries
     from auth import check_authentication
 
+try:
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    HAS_PLOTLY = True
+except ImportError:
+    HAS_PLOTLY = False
+
 # Check authentication
 authenticated, username, name = check_authentication()
 if not authenticated:
     st.stop()
 
-st.title("📈 Economic Indicators")
-st.markdown("### Explore Leading, Coincident, and Lagging Indicators")
+st.title("Economic Indicators")
+st.markdown("### Explore Leading, Coincident, Lagging, and Monetary Indicators")
 
 # Load indicator data
 indicators_df = load_indicators_cached()
 
 if indicators_df.empty:
-    st.warning("⚠️ No indicator data available. Please run the data refresh in Settings.")
+    st.warning("No indicator data available. Please run the data refresh in Settings.")
     st.stop()
 
-# Indicator descriptions
+# Indicator descriptions — includes new monetary/financial indicators
 INDICATOR_DESCRIPTIONS = {
     # Leading indicators
     'leading_USSLIND': {
@@ -46,33 +53,33 @@ INDICATOR_DESCRIPTIONS = {
         'category': 'Leading'
     },
     'leading_T10Y2Y': {
-        'name': '10-Year minus 2-Year Treasury Spread',
-        'description': 'Yield curve spread. Inversion (negative values) historically precedes recessions.',
+        'name': '10Y-2Y Treasury Spread',
+        'description': 'Yield curve spread. Inversion (negative values) historically precedes recessions by 6-18 months. (Estrella & Mishkin 1998)',
         'category': 'Leading'
     },
     'leading_T10Y3M': {
-        'name': '10-Year minus 3-Month Treasury Spread',
-        'description': 'Short-term yield curve spread. Another recession predictor.',
+        'name': '10Y-3M Treasury Spread',
+        'description': 'Primary yield curve recession predictor. Outperforms 10Y-2Y in formal testing. Every US recession since 1960s preceded by inversion. (Estrella & Mishkin 1998)',
         'category': 'Leading'
     },
     'leading_PERMIT': {
         'name': 'Building Permits',
-        'description': 'Number of new building permits issued. Leading indicator of construction activity.',
+        'description': 'Number of new building permits issued. Leading indicator of construction activity and housing investment.',
         'category': 'Leading'
     },
     'leading_HOUST': {
         'name': 'Housing Starts',
-        'description': 'Number of new housing units started. Predicts economic activity.',
+        'description': 'Number of new housing units started. Interest-rate sensitive, predicts economic activity.',
         'category': 'Leading'
     },
     'leading_ICSA': {
         'name': 'Initial Unemployment Claims',
-        'description': 'Weekly initial claims for unemployment insurance. Rising claims signal economic weakness.',
+        'description': 'Weekly initial claims for unemployment insurance. Rising claims signal labor market deterioration. Fast-moving, minimal revision.',
         'category': 'Leading'
     },
     'leading_UMCSENT': {
-        'name': 'Consumer Sentiment Index',
-        'description': 'University of Michigan consumer sentiment. Low sentiment predicts reduced spending.',
+        'name': 'Consumer Sentiment',
+        'description': 'University of Michigan consumer sentiment. Low sentiment predicts reduced consumer spending.',
         'category': 'Leading'
     },
     'leading_NEWORDER': {
@@ -88,22 +95,22 @@ INDICATOR_DESCRIPTIONS = {
     # Coincident indicators
     'coincident_PAYEMS': {
         'name': 'Nonfarm Payrolls',
-        'description': 'Total nonfarm employment. Real-time measure of labor market health.',
+        'description': 'Total nonfarm employment. Real-time measure of labor market health. One of 4 indicators in Chauvet-Hamilton model.',
         'category': 'Coincident'
     },
     'coincident_UNRATE': {
         'name': 'Unemployment Rate',
-        'description': 'Percentage of labor force unemployed. Key coincident indicator.',
+        'description': 'Percentage of labor force unemployed. Key coincident indicator. Basis for Sahm Rule recession trigger.',
         'category': 'Coincident'
     },
     'coincident_INDPRO': {
-        'name': 'Industrial Production Index',
-        'description': 'Index of manufacturing, mining, and utility output. Real-time economic activity.',
+        'name': 'Industrial Production',
+        'description': 'Index of manufacturing, mining, and utility output. Real-time economic activity. One of 4 Chauvet-Hamilton indicators.',
         'category': 'Coincident'
     },
     'coincident_PI': {
         'name': 'Personal Income',
-        'description': 'Total personal income. Measures consumer purchasing power.',
+        'description': 'Total personal income. Measures consumer purchasing power. One of 4 Chauvet-Hamilton indicators.',
         'category': 'Coincident'
     },
     'coincident_RSXFS': {
@@ -113,12 +120,12 @@ INDICATOR_DESCRIPTIONS = {
     },
     'coincident_CMRMTSPL': {
         'name': 'Real Manufacturing Sales',
-        'description': 'Real manufacturing and trade sales. Business activity indicator.',
+        'description': 'Real manufacturing and trade sales. Business activity indicator. One of 4 Chauvet-Hamilton indicators.',
         'category': 'Coincident'
     },
     # Lagging indicators
     'lagging_UEMPMEAN': {
-        'name': 'Average Unemployment Duration',
+        'name': 'Avg Unemployment Duration',
         'description': 'Average weeks unemployed. Confirms recession after it starts.',
         'category': 'Lagging'
     },
@@ -131,44 +138,188 @@ INDICATOR_DESCRIPTIONS = {
         'name': 'Inventory-to-Sales Ratio',
         'description': 'Ratio of inventories to sales. High ratios indicate economic slowdown.',
         'category': 'Lagging'
-    }
+    },
+    # Monetary/Financial indicators (new — Wright 2006, Gilchrist-Zakrajsek 2012)
+    'monetary_DFF': {
+        'name': 'Federal Funds Rate',
+        'description': 'Effective federal funds rate. Wright (2006) showed adding FFR level to yield curve probit significantly improves recession prediction.',
+        'category': 'Monetary'
+    },
+    'monetary_BAA10Y': {
+        'name': 'Baa Corporate - 10Y Treasury Spread',
+        'description': 'Credit spread proxy for the Excess Bond Premium (Gilchrist & Zakrajsek 2012). A 50bps rise increases 12-month recession probability by ~15pp.',
+        'category': 'Monetary'
+    },
+    'monetary_TEDRATE': {
+        'name': 'TED Spread (3M LIBOR - 3M T-Bill)',
+        'description': 'Interbank credit stress indicator. Spikes during financial crises signal banking system strain.',
+        'category': 'Monetary'
+    },
 }
+
+# Derived/computed indicators (shown separately)
+DERIVED_DESCRIPTIONS = {
+    'SAHM_INDICATOR': {
+        'name': 'Sahm Rule Indicator',
+        'description': 'Rise in 3-month average unemployment rate above its 12-month low. Trigger at 0.50pp. Only 2 false positives since 1959. (Sahm 2019)',
+        'category': 'Derived'
+    },
+    'SAHM_TRIGGER': {
+        'name': 'Sahm Rule Trigger',
+        'description': 'Binary flag: 1 when Sahm indicator >= 0.50pp. Designed as real-time coincident recession signal.',
+        'category': 'Derived'
+    },
+    'CREDIT_STRESS_INDEX': {
+        'name': 'Credit Stress Index',
+        'description': 'Standardized composite of Baa-Treasury spread and TED spread. Higher values indicate elevated financial stress.',
+        'category': 'Derived'
+    },
+    'AT_RISK_DIFFUSION': {
+        'name': 'At-Risk Diffusion Index',
+        'description': 'Fraction of indicators in "unusually weak" state (below expanding 10th percentile). (Billakanti & Shin 2025, Philly Fed)',
+        'category': 'Derived'
+    },
+    'FFR_STANCE': {
+        'name': 'Monetary Policy Stance',
+        'description': 'Federal funds rate relative to its 3-year moving average. Positive = tighter than recent norm.',
+        'category': 'Derived'
+    },
+}
+
+# Combine all descriptions
+ALL_DESCRIPTIONS = {**INDICATOR_DESCRIPTIONS, **DERIVED_DESCRIPTIONS}
 
 # Sidebar filters
 st.sidebar.markdown("### Filters")
 
 # Category filter
-categories = ['All', 'Leading', 'Coincident', 'Lagging']
+categories = ['All', 'Leading', 'Coincident', 'Lagging', 'Monetary', 'Derived']
 selected_category = st.sidebar.selectbox("Indicator Category", categories)
 
-# Indicator selector — show only raw indicators (not engineered features)
+# Filter indicators by category
 available_indicators = [col for col in indicators_df.columns
-                        if col in INDICATOR_DESCRIPTIONS]
+                        if col in ALL_DESCRIPTIONS]
 
 if selected_category != 'All':
     available_indicators = [
         ind for ind in available_indicators
-        if INDICATOR_DESCRIPTIONS.get(ind, {}).get('category') == selected_category
+        if ALL_DESCRIPTIONS.get(ind, {}).get('category') == selected_category
     ]
 
 if not available_indicators:
     st.warning("No indicators available in selected category.")
     st.stop()
 
-selected_indicator = st.sidebar.selectbox(
-    "Select Indicator",
-    options=available_indicators,
-    format_func=lambda x: INDICATOR_DESCRIPTIONS.get(x, {}).get('name', x)
-)
-
 # Show engineered features toggle
 show_features = st.sidebar.checkbox("Show Engineered Features", value=False)
 
-# Main content
-if selected_indicator in INDICATOR_DESCRIPTIONS:
-    info = INDICATOR_DESCRIPTIONS[selected_indicator]
-    st.markdown(f"### {info['name']}")
-    st.markdown(f"**Category:** {info['category']}")
+# ─── Overview Table ───────────────────────────────────────────────────────────
+st.markdown("---")
+st.markdown("### Indicator Summary")
+
+# Build summary table for all visible indicators
+summary_rows = []
+for col in available_indicators:
+    info = ALL_DESCRIPTIONS[col]
+    series = indicators_df[col].dropna()
+    if len(series) > 0:
+        current_val = series.iloc[-1]
+        current_date = series.index[-1]
+        yoy_change = (current_val - series.iloc[-12]) if len(series) >= 12 else np.nan
+        # Percentage change for YoY
+        if len(series) >= 12 and series.iloc[-12] != 0:
+            yoy_pct = ((current_val - series.iloc[-12]) / abs(series.iloc[-12])) * 100
+        else:
+            yoy_pct = np.nan
+    else:
+        current_val = np.nan
+        current_date = None
+        yoy_change = np.nan
+        yoy_pct = np.nan
+
+    summary_rows.append({
+        'Indicator': info['name'],
+        'Category': info['category'],
+        'Current Value': current_val,
+        'As Of': current_date.strftime('%Y-%m') if current_date is not None else 'N/A',
+        'YoY Change': yoy_change,
+        'YoY %': yoy_pct,
+        '_key': col,
+    })
+
+summary_df = pd.DataFrame(summary_rows)
+
+# Format and display
+display_df = summary_df[['Indicator', 'Category', 'Current Value', 'As Of', 'YoY Change', 'YoY %']].copy()
+display_df['Current Value'] = display_df['Current Value'].apply(
+    lambda x: f"{x:,.2f}" if pd.notna(x) else "N/A"
+)
+display_df['YoY Change'] = display_df['YoY Change'].apply(
+    lambda x: f"{x:+,.2f}" if pd.notna(x) else "N/A"
+)
+display_df['YoY %'] = display_df['YoY %'].apply(
+    lambda x: f"{x:+.1f}%" if pd.notna(x) else "N/A"
+)
+
+st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+# ─── Mini Sparkline Grid ─────────────────────────────────────────────────────
+st.markdown("---")
+st.markdown("### Trend Overview (Last 5 Years)")
+
+if HAS_PLOTLY:
+    # Show mini charts in a grid: 3 columns
+    cols_per_row = 3
+    for i in range(0, len(available_indicators), cols_per_row):
+        cols = st.columns(cols_per_row)
+        for j, col_widget in enumerate(cols):
+            idx = i + j
+            if idx >= len(available_indicators):
+                break
+            ind_key = available_indicators[idx]
+            info = ALL_DESCRIPTIONS[ind_key]
+            series = indicators_df[ind_key].dropna()
+
+            # Last 5 years
+            cutoff = pd.Timestamp.now() - pd.DateOffset(years=5)
+            series_recent = series[series.index >= cutoff]
+
+            with col_widget:
+                if len(series_recent) > 1:
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        x=series_recent.index,
+                        y=series_recent.values,
+                        mode='lines',
+                        line=dict(color='steelblue', width=2),
+                        hovertemplate='%{x|%Y-%m}: %{y:,.2f}<extra></extra>'
+                    ))
+                    fig.update_layout(
+                        title=dict(text=info['name'], font=dict(size=12)),
+                        height=180,
+                        margin=dict(l=5, r=5, t=30, b=5),
+                        xaxis=dict(showticklabels=False, showgrid=False),
+                        yaxis=dict(showticklabels=True, showgrid=True, tickfont=dict(size=9)),
+                        template='plotly_white',
+                    )
+                    st.plotly_chart(fig, use_container_width=True, key=f"spark_{ind_key}")
+                else:
+                    st.caption(info['name'])
+                    st.info("Insufficient data")
+
+# ─── Detailed Single-Indicator View ──────────────────────────────────────────
+st.markdown("---")
+st.markdown("### Indicator Detail")
+
+selected_indicator = st.selectbox(
+    "Select an indicator for detailed view",
+    options=available_indicators,
+    format_func=lambda x: ALL_DESCRIPTIONS.get(x, {}).get('name', x)
+)
+
+if selected_indicator in ALL_DESCRIPTIONS:
+    info = ALL_DESCRIPTIONS[selected_indicator]
+    st.markdown(f"**{info['name']}** ({info['category']})")
     st.info(info['description'])
 
     # Warn if indicator data is stale (last valid > 6 months old)
@@ -177,93 +328,51 @@ if selected_indicator in INDICATOR_DESCRIPTIONS:
         from datetime import datetime
         staleness_days = (pd.Timestamp.now() - last_valid).days
         if staleness_days > 180:
-            st.warning(f"⚠️ This indicator has not been updated since {last_valid.strftime('%Y-%m')}. "
+            st.warning(f"This indicator has not been updated since {last_valid.strftime('%Y-%m')}. "
                        f"It may be discontinued or delayed.")
 
-# Plot indicator
-st.markdown("---")
-st.markdown("### Time Series")
-
+# Full time series plot
 fig = plot_indicator_timeseries(
     indicators_df,
     selected_indicator,
     show_features=show_features
 )
-
 st.plotly_chart(fig, use_container_width=True)
 
-# Statistics
-st.markdown("---")
-st.markdown("### Statistics")
-
+# Statistics row
 col1, col2, col3, col4 = st.columns(4)
 
-# BUG FIX 14: Handle empty dataframe and missing values
-if indicators_df.empty or selected_indicator not in indicators_df.columns:
-    st.error("❌ No data available for selected indicator")
-    st.stop()
+series = indicators_df[selected_indicator].dropna()
 
 with col1:
-    try:
-        # Use last valid (non-null) value instead of last row
-        series = indicators_df[selected_indicator].dropna()
-        if len(series) > 0:
-            current_val = series.iloc[-1]
-            current_date = series.index[-1]
-            st.metric("Current Value", f"{current_val:,.2f}",
-                       help=f"As of {current_date.strftime('%Y-%m')}")
-        else:
-            st.metric("Current Value", "N/A")
-    except (IndexError, KeyError):
+    if len(series) > 0:
+        current_val = series.iloc[-1]
+        current_date = series.index[-1]
+        st.metric("Current Value", f"{current_val:,.2f}",
+                   help=f"As of {current_date.strftime('%Y-%m')}")
+    else:
         st.metric("Current Value", "N/A")
 
 with col2:
-    try:
-        series = indicators_df[selected_indicator].dropna()
-        if len(series) >= 12:
-            current = series.iloc[-1]
-            past = series.iloc[-12]
-            change = current - past
-            st.metric("YoY Change", f"{change:,.2f}")
-        else:
-            st.metric("YoY Change", "N/A")
-    except (IndexError, KeyError):
+    if len(series) >= 12:
+        change = series.iloc[-1] - series.iloc[-12]
+        st.metric("YoY Change", f"{change:+,.2f}")
+    else:
         st.metric("YoY Change", "N/A")
 
 with col3:
-    try:
-        mean_val = indicators_df[selected_indicator].mean()
-        if pd.isna(mean_val):
-            st.metric("Mean", "N/A")
-        else:
-            st.metric("Mean", f"{mean_val:,.2f}")
-    except (KeyError, ValueError):
-        st.metric("Mean", "N/A")
+    mean_val = series.mean()
+    st.metric("Mean", f"{mean_val:,.2f}" if pd.notna(mean_val) else "N/A")
 
 with col4:
-    try:
-        std_val = indicators_df[selected_indicator].std()
-        if pd.isna(std_val):
-            st.metric("Std Dev", "N/A")
-        else:
-            st.metric("Std Dev", f"{std_val:,.2f}")
-    except (KeyError, ValueError):
-        st.metric("Std Dev", "N/A")
+    std_val = series.std()
+    st.metric("Std Dev", f"{std_val:,.2f}" if pd.notna(std_val) else "N/A")
 
-# Data table
-st.markdown("---")
-st.markdown("### Recent Data")
-
-# Show last 12 months
-# BUG FIX 15: Handle empty dataframe
-if indicators_df.empty or selected_indicator not in indicators_df.columns:
-    st.warning("⚠️ No data available to display")
+# Recent data table
+st.markdown("#### Recent Data")
+valid_data = indicators_df[[selected_indicator]].dropna()
+recent_data = valid_data.tail(12)
+if recent_data.empty:
+    st.info("No recent data available")
 else:
-    # Show last 12 non-null values to avoid trailing NaN rows
-    valid_data = indicators_df[[selected_indicator]].dropna()
-    recent_data = valid_data.tail(12)
-    if recent_data.empty:
-        st.info("No recent data available")
-    else:
-        st.dataframe(recent_data, use_container_width=True)
-
+    st.dataframe(recent_data, use_container_width=True)

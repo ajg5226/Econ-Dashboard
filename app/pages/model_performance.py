@@ -1,6 +1,6 @@
 """
 Model Performance Page
-Displays model evaluation metrics and performance comparisons
+Displays model evaluation metrics, calibration analysis, and ensemble weights
 """
 
 import streamlit as st
@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 import numpy as np
 from sklearn.metrics import confusion_matrix
+import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -26,159 +27,269 @@ except ImportError:
     from utils.plotting import plot_model_performance
     from auth import check_authentication
 
+try:
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    HAS_PLOTLY = True
+except ImportError:
+    HAS_PLOTLY = False
+
 # Check authentication
 authenticated, username, name = check_authentication()
 if not authenticated:
     st.stop()
 
-st.title("🎯 Model Performance")
-st.markdown("### Evaluation Metrics and Comparison")
+st.title("Model Performance")
+st.markdown("### Evaluation Metrics, Calibration, and Ensemble Analysis")
 
 # Load predictions
 predictions_df = load_predictions_cached()
 
 if predictions_df.empty:
-    st.warning("⚠️ No prediction data available. Please run the data refresh in Settings.")
+    st.warning("No prediction data available. Please run the data refresh in Settings.")
     st.stop()
 
 # Convert Date to datetime and set as index
 predictions_df['Date'] = pd.to_datetime(predictions_df['Date'])
 predictions_df = predictions_df.set_index('Date').sort_index()
 
-# Calculate metrics if we have actual recession data
-if 'Actual_Recession' in predictions_df.columns:
-    # Get prediction columns
-    prob_cols = [col for col in predictions_df.columns if col.startswith('Prob_')]
-    
-    # Calculate metrics for each model
-    metrics_list = []
-    threshold = 0.5
-    
-    for prob_col in prob_cols:
-        model_name = prob_col.replace('Prob_', '').replace('_', ' ').title()
-        y_true = predictions_df['Actual_Recession'].values
-        y_pred_proba = predictions_df[prob_col].values
-        y_pred = (y_pred_proba >= threshold).astype(int)
-        
-        # Calculate metrics
-        from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score, accuracy_score
-        
-        # BUG FIX 13: Better error handling for AUC calculation
-        try:
-            # Check if we have both classes
-            if len(set(y_true)) < 2:
-                auc = 0.0
-            else:
-                auc = roc_auc_score(y_true, y_pred_proba)
-        except (ValueError, IndexError) as e:
-            logger.warning(f"Could not calculate AUC for {model_name}: {str(e)}")
-            auc = 0.0
-        
-        precision = precision_score(y_true, y_pred, zero_division=0)
-        recall = recall_score(y_true, y_pred, zero_division=0)
-        f1 = f1_score(y_true, y_pred, zero_division=0)
-        accuracy = accuracy_score(y_true, y_pred)
-        
-        metrics_list.append({
-            'Model': model_name,
-            'AUC': auc,
-            'Precision': precision,
-            'Recall': recall,
-            'F1': f1,
-            'Accuracy': accuracy
+# ── Load model metadata ──────────────────────────────────────────────────────
+DATA_DIR = Path(__file__).parent.parent.parent / "data" / "models"
+
+# Load saved metrics if available
+saved_metrics = None
+metrics_file = DATA_DIR / "metrics.csv"
+if metrics_file.exists():
+    try:
+        saved_metrics = pd.read_csv(metrics_file)
+    except Exception:
+        pass
+
+# Load ensemble weights
+ensemble_weights = {}
+weights_file = DATA_DIR / "ensemble_weights.json"
+if weights_file.exists():
+    try:
+        with open(weights_file) as f:
+            ensemble_weights = json.load(f)
+    except Exception:
+        pass
+
+# Load threshold
+threshold_info = {}
+threshold_file = DATA_DIR / "threshold.json"
+if threshold_file.exists():
+    try:
+        with open(threshold_file) as f:
+            threshold_info = json.load(f)
+    except Exception:
+        pass
+
+# Load CV results
+cv_results = {}
+cv_file = DATA_DIR / "cv_results.json"
+if cv_file.exists():
+    try:
+        with open(cv_file) as f:
+            cv_results = json.load(f)
+    except Exception:
+        pass
+
+# ── Decision Threshold Info ───────────────────────────────────────────────────
+threshold = threshold_info.get('decision_threshold', 0.5)
+
+st.markdown("---")
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric("Decision Threshold", f"{threshold:.3f}",
+              help="Optimized via Youden's J statistic (maximizes sensitivity + specificity)")
+with col2:
+    st.metric("Optimization Method", threshold_info.get('method', 'Default 0.5'))
+with col3:
+    n_models = len(ensemble_weights) if ensemble_weights else 'N/A'
+    st.metric("Ensemble Models", n_models)
+
+# ── Ensemble Weights ──────────────────────────────────────────────────────────
+if ensemble_weights:
+    st.markdown("---")
+    st.markdown("### Ensemble Weights (Performance-Weighted)")
+    st.markdown("*Weights derived from inverse Brier score on time-series cross-validation (BMA-inspired)*")
+
+    weight_cols = st.columns(len(ensemble_weights))
+    for i, (model_name, weight) in enumerate(ensemble_weights.items()):
+        with weight_cols[i]:
+            display_name = model_name.replace('_', ' ').title()
+            st.metric(display_name, f"{weight:.1%}")
+
+# ── Cross-Validation Results ─────────────────────────────────────────────────
+if cv_results:
+    st.markdown("---")
+    st.markdown("### Cross-Validation Results (Time-Series CV)")
+
+    cv_rows = []
+    for model_name, scores in cv_results.items():
+        cv_rows.append({
+            'Model': model_name.replace('_', ' ').title(),
+            'CV AUC': scores.get('auc', 0),
+            'CV Brier': scores.get('brier', 0),
         })
-    
-    metrics_df = pd.DataFrame(metrics_list)
-    
-    # Display metrics table
-    st.markdown("### Performance Metrics")
-    st.dataframe(metrics_df, use_container_width=True)
-    
-    # Plot performance comparison
+    cv_df = pd.DataFrame(cv_rows)
+    st.dataframe(cv_df, use_container_width=True, hide_index=True)
+
+# ── Performance Metrics Table ─────────────────────────────────────────────────
+if saved_metrics is not None and not saved_metrics.empty:
+    st.markdown("---")
+    st.markdown("### Out-of-Sample Performance Metrics")
+    st.markdown(f"*Evaluated at threshold = {threshold:.3f}*")
+
+    # Format the metrics for display
+    display_metrics = saved_metrics.copy()
+    display_metrics['Model'] = display_metrics['Model'].str.replace('_', ' ').str.title()
+
+    # Round numeric columns
+    numeric_cols = display_metrics.select_dtypes(include=[np.number]).columns
+    for col in numeric_cols:
+        display_metrics[col] = display_metrics[col].round(4)
+
+    st.dataframe(display_metrics, use_container_width=True, hide_index=True)
+
+    # ── Metrics Visualization ─────────────────────────────────────────────────
     st.markdown("---")
     st.markdown("### Performance Comparison")
-    
-    fig = plot_model_performance(metrics_df)
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Confusion matrices
-    st.markdown("---")
-    st.markdown("### Confusion Matrices")
-    
-    # Create confusion matrices for each model
-    # BUG FIX 10: Handle empty prob_cols list
-    if not prob_cols:
-        st.warning("⚠️ No prediction columns found")
-        st.stop()
-    
-    cols = st.columns(len(prob_cols))
-    
-    for idx, prob_col in enumerate(prob_cols):
-        with cols[idx]:
-            model_name = prob_col.replace('Prob_', '').replace('_', ' ').title()
-            st.markdown(f"**{model_name}**")
-            
-            y_true = predictions_df['Actual_Recession'].values
-            y_pred_proba = predictions_df[prob_col].values
-            y_pred = (y_pred_proba >= threshold).astype(int)
-            
-            cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
-            
-            # Display as table
-            cm_df = pd.DataFrame(
-                cm,
-                index=['No Recession', 'Recession'],
-                columns=['Predicted No', 'Predicted Yes']
-            )
-            st.dataframe(cm_df, use_container_width=True)
-            
-            # Calculate and display metrics
-            tn, fp, fn, tp = cm.ravel()
-            st.caption(f"TP: {tp}, FP: {fp}, FN: {fn}, TN: {tn}")
-    
-    # Training/Test Split Info
-    st.markdown("---")
-    st.markdown("### Data Split Information")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.info(f"**Total Observations:** {len(predictions_df)}")
-        st.info(f"**Date Range:** {predictions_df.index.min().strftime('%Y-%m-%d')} to {predictions_df.index.max().strftime('%Y-%m-%d')}")
-    
-    with col2:
-        recession_count = predictions_df['Actual_Recession'].sum()
-        st.info(f"**Recession Periods:** {recession_count}")
-        st.info(f"**Non-Recession Periods:** {len(predictions_df) - recession_count}")
-    
-    # Highlight best model
+
+    if HAS_PLOTLY:
+        fig = make_subplots(
+            rows=2, cols=3,
+            subplot_titles=('AUC-ROC', 'Brier Score (lower=better)', 'Log Loss (lower=better)',
+                            'Sensitivity (Recall)', 'Specificity', "Youden's J"),
+        )
+
+        metrics_to_plot = [
+            ('AUC', 1, 1), ('Brier', 1, 2), ('LogLoss', 1, 3),
+            ('Sensitivity', 2, 1), ('Specificity', 2, 2), ('Youdens_J', 2, 3)
+        ]
+
+        colors = ['#d62728', '#1f77b4', '#2ca02c', '#ff7f0e', '#9467bd']
+
+        for metric, row, col in metrics_to_plot:
+            if metric in saved_metrics.columns:
+                fig.add_trace(
+                    go.Bar(
+                        x=saved_metrics['Model'].str.replace('_', ' ').str.title(),
+                        y=saved_metrics[metric],
+                        marker_color=colors[:len(saved_metrics)],
+                        text=[f'{v:.3f}' for v in saved_metrics[metric]],
+                        textposition='outside',
+                        showlegend=False
+                    ),
+                    row=row, col=col
+                )
+
+        fig.update_layout(
+            height=600,
+            showlegend=False,
+            template='plotly_white'
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        fig = plot_model_performance(saved_metrics)
+        st.plotly_chart(fig, use_container_width=True)
+
+    # ── Best Model Highlight ──────────────────────────────────────────────────
     st.markdown("---")
     st.markdown("### Best Performing Model")
-    
-    # BUG FIX 11: Handle empty metrics_df or missing AUC column
-    if metrics_df.empty or 'AUC' not in metrics_df.columns:
-        st.warning("⚠️ No metrics available to determine best model")
-    else:
-        try:
-            best_idx = metrics_df['AUC'].idxmax()
-            if pd.isna(best_idx):
-                st.warning("⚠️ Could not determine best model")
-            else:
-                best_model = metrics_df.loc[best_idx]
-                st.success(f"🏆 **{best_model['Model']}** achieves the highest AUC score of **{best_model['AUC']:.4f}**")
-        except (KeyError, IndexError) as e:
-            st.warning(f"⚠️ Error determining best model: {str(e)}")
-    
-    # Ensemble highlight
-    # BUG FIX 12: Handle missing Model column or empty results
-    if not metrics_df.empty and 'Model' in metrics_df.columns:
-        if 'Ensemble' in metrics_df['Model'].values:
-            ensemble_df = metrics_df[metrics_df['Model'] == 'Ensemble']
-            if not ensemble_df.empty:
-                ensemble_metrics = ensemble_df.iloc[0]
-                st.info(f"📊 **Ensemble Model** combines all base models with AUC: **{ensemble_metrics['AUC']:.4f}**")
-    
+
+    if 'AUC' in saved_metrics.columns:
+        best_auc_idx = saved_metrics['AUC'].idxmax()
+        best_auc = saved_metrics.loc[best_auc_idx]
+        st.success(f"**Best AUC:** {best_auc['Model'].replace('_', ' ').title()} — {best_auc['AUC']:.4f}")
+
+    if 'Brier' in saved_metrics.columns:
+        best_brier_idx = saved_metrics['Brier'].idxmin()
+        best_brier = saved_metrics.loc[best_brier_idx]
+        st.success(f"**Best Calibration (Brier):** {best_brier['Model'].replace('_', ' ').title()} — {best_brier['Brier']:.4f}")
+
+    if 'Youdens_J' in saved_metrics.columns:
+        best_j_idx = saved_metrics['Youdens_J'].idxmax()
+        best_j = saved_metrics.loc[best_j_idx]
+        st.success(f"**Best Youden's J:** {best_j['Model'].replace('_', ' ').title()} — {best_j['Youdens_J']:.4f}")
+
+# ── Confusion Matrices ────────────────────────────────────────────────────────
+if 'Actual_Recession' in predictions_df.columns:
+    st.markdown("---")
+    st.markdown("### Confusion Matrices")
+    st.markdown(f"*At threshold = {threshold:.3f}*")
+
+    prob_cols = [col for col in predictions_df.columns if col.startswith('Prob_')]
+
+    if prob_cols:
+        cols = st.columns(len(prob_cols))
+
+        for idx, prob_col in enumerate(prob_cols):
+            with cols[idx]:
+                model_name = prob_col.replace('Prob_', '').replace('_', ' ').title()
+                st.markdown(f"**{model_name}**")
+
+                y_true = predictions_df['Actual_Recession'].values
+                y_pred_proba = predictions_df[prob_col].values
+                y_pred = (y_pred_proba >= threshold).astype(int)
+
+                cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
+
+                cm_df = pd.DataFrame(
+                    cm,
+                    index=['No Recession', 'Recession'],
+                    columns=['Predicted No', 'Predicted Yes']
+                )
+                st.dataframe(cm_df, use_container_width=True)
+
+                tn, fp, fn, tp = cm.ravel()
+                st.caption(f"TP: {tp}, FP: {fp}, FN: {fn}, TN: {tn}")
+
+    # ── Data Split Info ───────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### Data Split Information")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.info(f"**Test Observations:** {len(predictions_df)}")
+        st.info(f"**Date Range:** {predictions_df.index.min().strftime('%Y-%m-%d')} to {predictions_df.index.max().strftime('%Y-%m-%d')}")
+
+    with col2:
+        recession_count = int(predictions_df['Actual_Recession'].sum())
+        st.info(f"**Recession Months:** {recession_count}")
+        st.info(f"**Non-Recession Months:** {len(predictions_df) - recession_count}")
+        if len(predictions_df) > 0:
+            st.info(f"**Recession Rate:** {recession_count / len(predictions_df):.1%}")
+
+    # ── Methodology ─────────────────────────────────────────────────────────
+    st.markdown("---")
+    with st.expander("Methodology & References"):
+        st.markdown("""
+        ### Model Architecture
+        - **Base Models:** L1-Probit (Estrella-Mishkin style), Random Forest (300 trees), XGBoost (400 rounds)
+        - **Class Weighting:** All models use balanced class weights to handle ~12% recession base rate
+        - **Calibration:** Isotonic regression via time-series cross-validation (avoids SMOTE miscalibration)
+        - **Ensemble:** Performance-weighted average using inverse Brier score (BMA-inspired)
+        - **Threshold:** Youden's J statistic — maximizes (sensitivity + specificity - 1)
+
+        ### Feature Engineering
+        - **Standard:** MoM/3M/6M/YoY percent changes, 3M/6M rolling means, 6M rolling volatility
+        - **Term Spread Dynamics:** Inversion flag, depth, duration, momentum (Engstrom & Sharpe 2019)
+        - **Sahm Rule:** 3M unemployment MA rise above 12M trailing low (Sahm 2019)
+        - **At-Risk Transformation:** Expanding-window percentile flags (Billakanti & Shin 2025, Philly Fed)
+        - **Credit Stress Index:** Standardized composite of Baa spread + TED spread
+        - **Monetary Policy Stance:** FFR × term spread interaction (Wright 2006)
+
+        ### Key References
+        - Estrella & Mishkin (1998). *Predicting U.S. Recessions: Financial Variables as Leading Indicators*
+        - Wright (2006). *The Yield Curve and Predicting Recessions*
+        - Gilchrist & Zakrajsek (2012). *Credit Spreads and Business Cycle Fluctuations*
+        - Sahm (2019). *Direct Stimulus Payments to Individuals*
+        - Billakanti & Shin (2025). *At-Risk Transformation for U.S. Recession Prediction*
+        - Engstrom & Sharpe (2019). *The Near-Term Forward Yield Spread as a Leading Indicator*
+        """)
+
 else:
     st.warning("Actual recession data not available. Cannot calculate performance metrics.")
-    st.info("Performance metrics require both predictions and actual recession indicators.")
-

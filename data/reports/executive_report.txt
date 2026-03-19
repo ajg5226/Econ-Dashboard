@@ -1,17 +1,34 @@
 ================================================================================
-GOLDMAN SACHS RECESSION PREDICTION ENGINE
-Report Generated: 2026-03-18 22:08:44
+RECESSION PREDICTION ENGINE — EXECUTIVE REPORT
+Report Generated: 2026-03-19 08:36:21
 ================================================================================
 
-RECESSION PROBABILITY - 6 MONTHS FORWARD
+RECESSION PROBABILITY — 6 MONTHS FORWARD
 As of: 2025-09-30
+Decision Threshold: 0.300 (optimized via Youden's J)
 --------------------------------------------------------------------------------
-  PROBIT              :   8.6%
-  RANDOM_FOREST       :  34.7%
-  XGBOOST             :   9.4%
-  ENSEMBLE            :   3.8%
+
+MODEL PREDICTIONS:
+  PROBIT              :  12.4%  (weight: 0.376)
+  RANDOM_FOREST       :  11.7%  (weight: 0.322)
+  XGBOOST             :  17.4%  (weight: 0.302)
+  ENSEMBLE            :  13.7%  (weighted combination)
 
 ================================================================================
-🟢 LOW RISK - Economy appears stable
+SIGNAL: MODERATE RISK — Monitor closely
 
+================================================================================
+METHODOLOGY:
+  Models: L1-Probit, Random Forest (300 trees), XGBoost (400 rounds)
+  Class weighting: Balanced (accounts for ~12% recession base rate)
+  Calibration: Isotonic regression via time-series cross-validation
+  Ensemble: Performance-weighted (inverse Brier score)
+  Threshold: Youden's J statistic (maximizes sensitivity + specificity)
+  Features: 67 selected from correlation + RF importance
+  Includes: At-risk transforms, Sahm Rule, term spread dynamics,
+            credit stress index, monetary policy stance interaction
+
+  References:
+  - Estrella & Mishkin (1998), Wright (2006), Sahm (2019)
+  - Billakanti & Shin (2025), Engstrom & Sharpe (2019)
 ================================================================================
