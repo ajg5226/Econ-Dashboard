@@ -189,14 +189,20 @@ def run_update_job(horizon_months=6, train_end_date=None):
         logger.info("STEP 6: PREDICTION & EVALUATION")
         logger.info("=" * 100)
 
-        predictions = model.predict(test_df)
+        # STEP 6a: PREDICTIONS WITH CONFIDENCE INTERVALS
+        logger.info("=" * 100)
+        logger.info("STEP 6: PREDICTION WITH CONFIDENCE INTERVALS")
+        logger.info("=" * 100)
+
+        ci_result = model.predict_with_confidence(test_df, n_bootstrap=200, ci_level=0.90)
+        predictions = ci_result['predictions']
         metrics_df = model.evaluate(test_df, predictions)
 
         # Save metrics
         metrics_df.to_csv(models_dir / "metrics.csv", index=False)
         logger.info("✓ Saved evaluation metrics")
 
-        # STEP 7: SAVE PREDICTIONS
+        # STEP 7: SAVE PREDICTIONS (with confidence intervals)
         logger.info("=" * 100)
         logger.info("STEP 7: SAVING PREDICTIONS")
         logger.info("=" * 100)
@@ -207,12 +213,29 @@ def run_update_job(horizon_months=6, train_end_date=None):
             'Prob_Ensemble': predictions['ensemble'],
             'Prob_Probit': predictions['probit'],
             'Prob_RandomForest': predictions['random_forest'],
+            'CI_Lower': ci_result['ensemble_ci_lower'],
+            'CI_Upper': ci_result['ensemble_ci_upper'],
+            'CI_Std': ci_result['ensemble_std'],
+            'Model_Spread': ci_result['model_spread'],
         }
         if 'xgboost' in predictions:
             data_dict['Prob_XGBoost'] = predictions['xgboost']
 
         predictions_df = pd.DataFrame(data_dict)
         save_predictions(predictions_df, test_df)
+
+        # Save CI metadata
+        with open(models_dir / "confidence_intervals.json", 'w') as f:
+            json.dump({
+                'ci_level': ci_result['ci_level'],
+                'n_bootstrap': 200,
+                'method': 'Dirichlet weight perturbation',
+                'latest_ci_lower': float(ci_result['ensemble_ci_lower'][-1]),
+                'latest_ci_upper': float(ci_result['ensemble_ci_upper'][-1]),
+                'latest_model_spread': float(ci_result['model_spread'][-1]),
+                'timestamp': datetime.now().isoformat(),
+            }, f, indent=2)
+        logger.info("✓ Saved confidence interval metadata")
 
         # STEP 8: GENERATE REPORT
         logger.info("=" * 100)
@@ -221,6 +244,33 @@ def run_update_job(horizon_months=6, train_end_date=None):
 
         report = model.generate_report(test_df, predictions)
         save_executive_report(report)
+
+        # STEP 9: PSEUDO OUT-OF-SAMPLE BACKTEST
+        logger.info("=" * 100)
+        logger.info("STEP 9: HISTORICAL BACKTEST (pseudo out-of-sample)")
+        logger.info("=" * 100)
+
+        try:
+            from recession_engine.backtester import RecessionBacktester
+            backtester = RecessionBacktester(acq, type(model), target_horizon=horizon_months)
+
+            backtest_results = backtester.run_pseudo_oos_backtest(df_final)
+            backtest_path = models_dir / "backtest_results.csv"
+            backtest_results.to_csv(backtest_path, index=False)
+            logger.info("✓ Saved backtest results to %s", backtest_path)
+
+            # Summary
+            summary = backtester.summarize_results(backtest_results)
+            logger.info("\nBACKTEST SUMMARY:\n%s", summary)
+
+            # Save summary
+            with open(models_dir / "backtest_summary.txt", 'w') as f:
+                f.write(summary)
+
+        except Exception as e:
+            logger.warning("Backtest failed (non-fatal): %s", e)
+            import traceback
+            traceback.print_exc()
 
         # FINAL SUMMARY
         logger.info("=" * 100)

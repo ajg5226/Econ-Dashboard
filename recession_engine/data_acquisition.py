@@ -74,6 +74,11 @@ class RecessionDataAcquisition:
                 'BAA10Y': 'Baa Corporate Bond - 10Y Treasury Spread',
                 'TEDRATE': 'TED Spread (3M LIBOR - 3M T-Bill)',
             },
+            # Financial conditions (Chicago Fed)
+            'financial': {
+                'NFCI': 'Chicago Fed National Financial Conditions Index',
+                'ANFCI': 'Chicago Fed Adjusted NFCI',
+            },
             'target': {
                 'USREC': 'NBER Recession Indicator',
             }
@@ -208,16 +213,29 @@ class RecessionDataAcquisition:
         at_risk_cols = self._compute_at_risk_features(df, indicator_cols)
         df_eng = pd.concat([df_eng, at_risk_cols], axis=1)
 
-        # ── Tier 5: Credit stress composites ─────────────────────────
+        # ── Tier 5: Credit/financial stress composites ────────────────
         baa_col = 'monetary_BAA10Y'
         ted_col = 'monetary_TEDRATE'
+        nfci_col = 'financial_NFCI'
+
+        # Core credit stress index (Baa spread + TED)
         if baa_col in df.columns and ted_col in df.columns:
-            # Standardize both and average → credit stress index
             baa = df[baa_col]
             ted = df[ted_col]
             baa_z = (baa - baa.expanding(min_periods=24).mean()) / baa.expanding(min_periods=24).std()
             ted_z = (ted - ted.expanding(min_periods=24).mean()) / ted.expanding(min_periods=24).std()
             df_eng['CREDIT_STRESS_INDEX'] = (baa_z + ted_z) / 2
+
+        # NFCI-augmented stress index (when available — NFCI starts ~1971)
+        if nfci_col in df.columns:
+            nfci = df[nfci_col]
+            nfci_z = (nfci - nfci.expanding(min_periods=24).mean()) / nfci.expanding(min_periods=24).std()
+            df_eng['NFCI_Z'] = nfci_z
+            if baa_col in df.columns:
+                # Composite: equal weight NFCI + Baa spread
+                baa = df[baa_col]
+                baa_z = (baa - baa.expanding(min_periods=24).mean()) / baa.expanding(min_periods=24).std()
+                df_eng['FINANCIAL_STRESS_COMPOSITE'] = (nfci_z + baa_z) / 2
 
         # ── Tier 6: Monetary policy stance (Wright 2006) ─────────────
         ffr_col = 'monetary_DFF'
@@ -253,6 +271,7 @@ class RecessionDataAcquisition:
         countercyclical = {
             'coincident_UNRATE', 'lagging_UEMPMEAN', 'leading_ICSA',
             'lagging_ISRATIO', 'monetary_BAA10Y', 'monetary_TEDRATE',
+            'financial_NFCI', 'financial_ANFCI',
         }
 
         at_risk = pd.DataFrame(index=df.index)

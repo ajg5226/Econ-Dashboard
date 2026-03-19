@@ -206,6 +206,7 @@ class RecessionEnsembleModel:
             'monetary_BAA10Y', 'SAHM_INDICATOR', 'SAHM_TRIGGER',
             'AT_RISK_DIFFUSION', 'AT_RISK_DIFFUSION_WEIGHTED',
             'CREDIT_STRESS_INDEX', 'FFR_x_SPREAD', 'FFR_STANCE',
+            'financial_NFCI', 'NFCI_Z', 'FINANCIAL_STRESS_COMPOSITE',
         ]
         for col in must_include:
             if col in valid_cols and col not in selected:
@@ -442,6 +443,63 @@ class RecessionEnsembleModel:
         predictions['ensemble'] = ensemble_proba
 
         return predictions
+
+    def predict_with_confidence(self, test_df, n_bootstrap=200, ci_level=0.90):
+        """
+        Generate predictions with bootstrap confidence intervals.
+
+        Bootstraps the ensemble weight vector to produce a distribution of
+        ensemble probabilities at each time step. This captures uncertainty
+        from model combination (which model to trust) without the cost of
+        refitting base models.
+
+        Also includes model-spread-based uncertainty (disagreement among base
+        models as a natural measure of epistemic uncertainty).
+
+        Returns:
+            dict with keys:
+                'predictions': standard predictions dict
+                'ensemble_ci_lower': lower bound of CI
+                'ensemble_ci_upper': upper bound of CI
+                'ensemble_std': standard deviation across bootstrap samples
+                'model_spread': max - min across base model predictions
+        """
+        # Get base predictions
+        predictions = self.predict(test_df)
+
+        base_names = [n for n in self.models if n in predictions]
+        base_probas = np.column_stack([predictions[n] for n in base_names])
+        n_obs = len(base_probas)
+
+        # Method 1: Bootstrap ensemble weights
+        rng = np.random.RandomState(42)
+        original_weights = np.array([self.ensemble_weights[n] for n in base_names])
+
+        bootstrap_ensembles = np.zeros((n_bootstrap, n_obs))
+        for b in range(n_bootstrap):
+            # Dirichlet perturbation of weights (concentrated around original)
+            # Higher alpha = tighter around original weights
+            alpha = original_weights * 20 + 1  # concentration parameter
+            sampled_weights = rng.dirichlet(alpha)
+            bootstrap_ensembles[b] = base_probas @ sampled_weights
+
+        # Compute CI bounds
+        alpha_tail = (1 - ci_level) / 2
+        ci_lower = np.percentile(bootstrap_ensembles, alpha_tail * 100, axis=0)
+        ci_upper = np.percentile(bootstrap_ensembles, (1 - alpha_tail) * 100, axis=0)
+        ensemble_std = np.std(bootstrap_ensembles, axis=0)
+
+        # Method 2: Model spread (simpler epistemic uncertainty)
+        model_spread = np.max(base_probas, axis=1) - np.min(base_probas, axis=1)
+
+        return {
+            'predictions': predictions,
+            'ensemble_ci_lower': ci_lower,
+            'ensemble_ci_upper': ci_upper,
+            'ensemble_std': ensemble_std,
+            'model_spread': model_spread,
+            'ci_level': ci_level,
+        }
 
     # ------------------------------------------------------------------
     # Evaluation

@@ -155,6 +155,17 @@ INDICATOR_DESCRIPTIONS = {
         'description': 'Interbank credit stress indicator. Spikes during financial crises signal banking system strain.',
         'category': 'Monetary'
     },
+    # Financial conditions indices (Chicago Fed)
+    'financial_NFCI': {
+        'name': 'Chicago Fed NFCI',
+        'description': 'National Financial Conditions Index. Widely cited composite of 105 financial indicators. Positive = tighter-than-average conditions.',
+        'category': 'Financial'
+    },
+    'financial_ANFCI': {
+        'name': 'Chicago Fed Adjusted NFCI',
+        'description': 'NFCI adjusted for prevailing economic conditions. Isolates financial conditions from the business cycle.',
+        'category': 'Financial'
+    },
 }
 
 # Derived/computed indicators (shown separately)
@@ -184,6 +195,16 @@ DERIVED_DESCRIPTIONS = {
         'description': 'Federal funds rate relative to its 3-year moving average. Positive = tighter than recent norm.',
         'category': 'Derived'
     },
+    'NFCI_Z': {
+        'name': 'NFCI Z-Score',
+        'description': 'Standardized NFCI using expanding window. Measures how unusual current financial conditions are relative to history.',
+        'category': 'Derived'
+    },
+    'FINANCIAL_STRESS_COMPOSITE': {
+        'name': 'Financial Stress Composite',
+        'description': 'Equal-weighted composite of NFCI z-score and Baa credit spread z-score. Broader measure of financial system stress.',
+        'category': 'Derived'
+    },
 }
 
 # Combine all descriptions
@@ -193,7 +214,7 @@ ALL_DESCRIPTIONS = {**INDICATOR_DESCRIPTIONS, **DERIVED_DESCRIPTIONS}
 st.sidebar.markdown("### Filters")
 
 # Category filter
-categories = ['All', 'Leading', 'Coincident', 'Lagging', 'Monetary', 'Derived']
+categories = ['All', 'Leading', 'Coincident', 'Lagging', 'Monetary', 'Financial', 'Derived']
 selected_category = st.sidebar.selectbox("Indicator Category", categories)
 
 # Filter indicators by category

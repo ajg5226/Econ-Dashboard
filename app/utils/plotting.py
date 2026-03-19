@@ -24,7 +24,9 @@ def plot_recession_probability(
     df: pd.DataFrame,
     predictions: dict,
     start_date: str = None,
-    end_date: str = None
+    end_date: str = None,
+    ci_lower: np.ndarray = None,
+    ci_upper: np.ndarray = None,
 ):
     """
     Create interactive recession probability chart
@@ -71,7 +73,34 @@ def plot_recession_probability(
             line=dict(color='darkred', width=3),
             hovertemplate='<b>Ensemble</b><br>Date: %{x}<br>Probability: %{y:.1%}<extra></extra>'
         ))
-    
+
+    # Plot confidence interval band if provided
+    if ci_lower is not None and ci_upper is not None:
+        ci_lo = np.array(ci_lower)
+        ci_hi = np.array(ci_upper)
+        # Adjust length to match df
+        if len(ci_lo) != len(df):
+            if len(ci_lo) > len(df):
+                ci_lo = ci_lo[:len(df)]
+                ci_hi = ci_hi[:len(df)]
+            else:
+                ci_lo = np.pad(ci_lo, (0, len(df) - len(ci_lo)), mode='edge')
+                ci_hi = np.pad(ci_hi, (0, len(df) - len(ci_hi)), mode='edge')
+
+        fig.add_trace(go.Scatter(
+            x=df.index, y=ci_hi, mode='lines',
+            line=dict(width=0), showlegend=False,
+            hoverinfo='skip',
+        ))
+        fig.add_trace(go.Scatter(
+            x=df.index, y=ci_lo, mode='lines',
+            line=dict(width=0), showlegend=True,
+            name='90% CI',
+            fill='tonexty',
+            fillcolor='rgba(178,34,34,0.15)',
+            hoverinfo='skip',
+        ))
+
     # Plot base model predictions
     model_colors = {
         'probit': 'blue',

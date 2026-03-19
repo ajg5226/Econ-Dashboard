@@ -95,6 +95,35 @@ if cv_file.exists():
     except Exception:
         pass
 
+# Load backtest results
+backtest_df = None
+backtest_file = DATA_DIR / "backtest_results.csv"
+if backtest_file.exists():
+    try:
+        backtest_df = pd.read_csv(backtest_file)
+    except Exception:
+        pass
+
+# Load backtest summary
+backtest_summary = ""
+summary_file = DATA_DIR / "backtest_summary.txt"
+if summary_file.exists():
+    try:
+        with open(summary_file) as f:
+            backtest_summary = f.read()
+    except Exception:
+        pass
+
+# Load confidence interval metadata
+ci_info = {}
+ci_file = DATA_DIR / "confidence_intervals.json"
+if ci_file.exists():
+    try:
+        with open(ci_file) as f:
+            ci_info = json.load(f)
+    except Exception:
+        pass
+
 # ── Decision Threshold Info ───────────────────────────────────────────────────
 threshold = threshold_info.get('decision_threshold', 0.5)
 
@@ -262,6 +291,66 @@ if 'Actual_Recession' in predictions_df.columns:
         st.info(f"**Non-Recession Months:** {len(predictions_df) - recession_count}")
         if len(predictions_df) > 0:
             st.info(f"**Recession Rate:** {recession_count / len(predictions_df):.1%}")
+
+    # ── Confidence Intervals ─────────────────────────────────────────────────
+    if ci_info:
+        st.markdown("---")
+        st.markdown("### Confidence Intervals (Current)")
+        ci_cols = st.columns(4)
+        with ci_cols[0]:
+            st.metric("CI Level", f"{ci_info.get('ci_level', 0.9):.0%}")
+        with ci_cols[1]:
+            st.metric("Lower Bound", f"{ci_info.get('latest_ci_lower', 0):.1%}")
+        with ci_cols[2]:
+            st.metric("Upper Bound", f"{ci_info.get('latest_ci_upper', 0):.1%}")
+        with ci_cols[3]:
+            st.metric("Model Spread", f"{ci_info.get('latest_model_spread', 0):.1%}",
+                      help="Max - min probability across base models (epistemic uncertainty)")
+        st.caption(f"Method: {ci_info.get('method', 'N/A')} ({ci_info.get('n_bootstrap', 'N/A')} samples)")
+
+    # ── Historical Backtest Results ───────────────────────────────────────────
+    if backtest_df is not None and not backtest_df.empty:
+        st.markdown("---")
+        st.markdown("### Historical Backtest (Pseudo Out-of-Sample)")
+        st.markdown("*Each recession tested by training ONLY on data before it occurred*")
+
+        if backtest_summary:
+            st.info(backtest_summary)
+
+        # Show results table
+        display_cols = [c for c in ['Recession', 'AUC', 'Brier', 'Peak_Prob', 'Peak_Date',
+                                     'Crossed_Threshold', 'Lead_Months', 'Threshold']
+                        if c in backtest_df.columns]
+        bt_display = backtest_df[display_cols].copy()
+
+        # Format
+        for col in ['AUC', 'Brier']:
+            if col in bt_display.columns:
+                bt_display[col] = bt_display[col].apply(
+                    lambda x: f"{x:.3f}" if pd.notna(x) else "N/A")
+        if 'Peak_Prob' in bt_display.columns:
+            bt_display['Peak_Prob'] = bt_display['Peak_Prob'].apply(
+                lambda x: f"{x:.1%}" if pd.notna(x) else "N/A")
+        if 'Lead_Months' in bt_display.columns:
+            bt_display['Lead_Months'] = bt_display['Lead_Months'].apply(
+                lambda x: f"{x:.0f}mo" if pd.notna(x) else "N/A")
+        if 'Threshold' in bt_display.columns:
+            bt_display['Threshold'] = bt_display['Threshold'].apply(
+                lambda x: f"{x:.2f}" if pd.notna(x) else "N/A")
+
+        st.dataframe(bt_display, use_container_width=True, hide_index=True)
+
+        # Highlight GFC result
+        gfc_rows = backtest_df[backtest_df['Recession'].str.contains('GFC', na=False)]
+        if not gfc_rows.empty:
+            gfc = gfc_rows.iloc[0]
+            crossed = gfc.get('Crossed_Threshold', False)
+            peak = gfc.get('Peak_Prob', 0)
+            if crossed:
+                st.success(f"**GFC Detection:** Peak probability {peak:.1%} — crossed threshold. "
+                           f"Lead time: {gfc.get('Lead_Months', 'N/A'):.0f} months before recession.")
+            else:
+                st.warning(f"**GFC Detection:** Peak probability {peak:.1%} — did NOT cross threshold.")
 
     # ── Methodology ─────────────────────────────────────────────────────────
     st.markdown("---")

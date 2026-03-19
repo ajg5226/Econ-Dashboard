@@ -140,11 +140,30 @@ else:
         latest_prob = 0.0
 
 with col1:
+    # Show confidence interval if available
+    ci_label = f"{latest_prob:.1%}"
+    if 'CI_Lower' in filtered_df.columns and 'CI_Upper' in filtered_df.columns:
+        try:
+            ci_lo = float(filtered_df['CI_Lower'].iloc[-1])
+            ci_hi = float(filtered_df['CI_Upper'].iloc[-1])
+            if not (pd.isna(ci_lo) or pd.isna(ci_hi)):
+                ci_label = f"{latest_prob:.1%}"
+        except (IndexError, KeyError):
+            pass
     st.metric(
         "Current Probability",
-        f"{latest_prob:.1%}",
+        ci_label,
         delta=f"{(latest_prob - threshold):.1%}" if latest_prob > threshold else None
     )
+    # Show CI range below the metric
+    if 'CI_Lower' in filtered_df.columns and 'CI_Upper' in filtered_df.columns:
+        try:
+            ci_lo = float(filtered_df['CI_Lower'].iloc[-1])
+            ci_hi = float(filtered_df['CI_Upper'].iloc[-1])
+            if not (pd.isna(ci_lo) or pd.isna(ci_hi)):
+                st.caption(f"90% CI: [{ci_lo:.1%}, {ci_hi:.1%}]")
+        except (IndexError, KeyError):
+            pass
 
 # Risk level
 if latest_prob < 0.15:
@@ -201,11 +220,17 @@ st.markdown("### Recession Probability Over Time")
 start_date_str = start_date.strftime("%Y-%m-%d") if start_date is not None else None
 end_date_str = end_date.strftime("%Y-%m-%d") if end_date is not None else None
 
+# Pass confidence intervals if available
+ci_lower = filtered_df['CI_Lower'].values if 'CI_Lower' in filtered_df.columns else None
+ci_upper = filtered_df['CI_Upper'].values if 'CI_Upper' in filtered_df.columns else None
+
 fig = plot_recession_probability(
     pd.DataFrame({'RECESSION': recession_series}),
     predictions_dict,
     start_date=start_date_str,
-    end_date=end_date_str
+    end_date=end_date_str,
+    ci_lower=ci_lower,
+    ci_upper=ci_upper,
 )
 
 st.plotly_chart(fig, use_container_width=True)
