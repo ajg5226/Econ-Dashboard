@@ -175,11 +175,11 @@ class ModelMonitor:
 
         if spread > spread_threshold:
             result['status'] = 'WARNING'
+            model_strs = [f'{c.replace("Prob_", "")}={float(latest[c]):.1%}' for c in prob_cols]
             self.alerts.append({
                 'level': 'WARNING',
                 'check': 'model_disagreement',
-                'message': (f'High model disagreement: spread={spread:.1%}. '
-                            f'Models: {", ".join(f"{c.replace("Prob_", "")}={float(latest[c]):.1%}" for c in prob_cols)}')
+                'message': f'High model disagreement: spread={spread:.1%}. Models: {", ".join(model_strs)}'
             })
 
         return result
@@ -200,7 +200,8 @@ class ModelMonitor:
         result = {'status': 'OK', 'details': {}}
 
         available_features = [f for f in feature_cols if f in indicators_df.columns]
-        if not available_features or len(indicators_df) < lookback_months:
+        # Need at least lookback_months + 12 rows (12 recent + lookback-12 reference)
+        if not available_features or len(indicators_df) < lookback_months + 12:
             result['status'] = 'SKIP'
             result['details']['reason'] = 'Insufficient data for drift check'
             return result
@@ -264,13 +265,15 @@ class ModelMonitor:
         ref_counts = np.histogram(reference, bins=breakpoints)[0]
         rec_counts = np.histogram(recent, bins=breakpoints)[0]
 
-        # Convert to proportions (with smoothing to avoid division by zero)
-        eps = 1e-6
-        ref_pct = (ref_counts + eps) / (ref_counts.sum() + eps * len(ref_counts))
-        rec_pct = (rec_counts + eps) / (rec_counts.sum() + eps * len(rec_counts))
+        # Convert to proportions (smooth counts before normalizing)
+        eps = 1e-4
+        ref_smoothed = ref_counts + eps
+        rec_smoothed = rec_counts + eps
+        ref_pct = ref_smoothed / ref_smoothed.sum()
+        rec_pct = rec_smoothed / rec_smoothed.sum()
 
         psi = np.sum((rec_pct - ref_pct) * np.log(rec_pct / ref_pct))
-        return float(psi)
+        return float(np.clip(psi, 0, None))  # PSI is non-negative by definition
 
     def _check_calibration_drift(self, df: pd.DataFrame,
                                   window: int = 24) -> dict:
@@ -287,8 +290,15 @@ class ModelMonitor:
             return result
 
         recent = df.iloc[-window:]
-        predicted_mean = float(recent['Prob_Ensemble'].astype(float).mean())
-        observed_rate = float(recent['Actual_Recession'].astype(float).mean())
+        predicted_mean = float(recent['Prob_Ensemble'].astype(float).dropna().mean())
+        # Only compute observed rate on rows with known outcomes (exclude nowcast NaNs)
+        actual = recent['Actual_Recession'].dropna().astype(float)
+        observed_rate = float(actual.mean()) if len(actual) > 0 else np.nan
+
+        if np.isnan(predicted_mean) or np.isnan(observed_rate):
+            result['status'] = 'SKIP'
+            result['details']['reason'] = 'Insufficient non-NaN data for calibration'
+            return result
 
         cal_gap = abs(predicted_mean - observed_rate)
 
@@ -297,6 +307,7 @@ class ModelMonitor:
             'mean_predicted': round(predicted_mean, 4),
             'observed_rate': round(observed_rate, 4),
             'calibration_gap': round(cal_gap, 4),
+            'observed_months': int(len(actual)),
         }
 
         # A gap > 15pp over 24 months is concerning

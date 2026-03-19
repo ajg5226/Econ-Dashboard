@@ -321,14 +321,15 @@ with col2:
         st.info("Report not available")
 
 with col3:
-    # Download chart as PNG (requires plotly)
-    if st.button("📊 Download Chart (PNG)"):
-        fig.write_image("recession_probability.png")
-        with open("recession_probability.png", "rb") as file:
-            st.download_button(
-                label="⬇️ Download PNG",
-                data=file.read(),
-                file_name=f"recession_probability_{datetime.now().strftime('%Y%m%d')}.png",
-                mime="image/png"
-            )
+    # Download chart as PNG (in-memory, no disk write needed)
+    try:
+        png_bytes = fig.to_image(format="png", width=1200, height=600)
+        st.download_button(
+            label="📊 Download Chart (PNG)",
+            data=png_bytes,
+            file_name=f"recession_probability_{datetime.now().strftime('%Y%m%d')}.png",
+            mime="image/png"
+        )
+    except Exception:
+        st.info("PNG export requires the `kaleido` package")
 

@@ -229,23 +229,29 @@ class RecessionDataAcquisition:
         ted_col = 'monetary_TEDRATE'
         nfci_col = 'financial_NFCI'
 
+        # Helper: expanding z-score with division-by-zero protection
+        def _expanding_zscore(series, min_periods=24):
+            mean = series.expanding(min_periods=min_periods).mean()
+            std = series.expanding(min_periods=min_periods).std()
+            # Replace zero/near-zero std with NaN to avoid inf
+            std = std.where(std > 1e-8, np.nan)
+            return (series - mean) / std
+
         # Core credit stress index (Baa spread + TED)
-        if baa_col in df.columns and ted_col in df.columns:
-            baa = df[baa_col]
-            ted = df[ted_col]
-            baa_z = (baa - baa.expanding(min_periods=24).mean()) / baa.expanding(min_periods=24).std()
-            ted_z = (ted - ted.expanding(min_periods=24).mean()) / ted.expanding(min_periods=24).std()
+        # Compute z-scores once and reuse
+        baa_z = None
+        if baa_col in df.columns:
+            baa_z = _expanding_zscore(df[baa_col])
+
+        if baa_z is not None and ted_col in df.columns:
+            ted_z = _expanding_zscore(df[ted_col])
             df_eng['CREDIT_STRESS_INDEX'] = (baa_z + ted_z) / 2
 
         # NFCI-augmented stress index (when available — NFCI starts ~1971)
         if nfci_col in df.columns:
-            nfci = df[nfci_col]
-            nfci_z = (nfci - nfci.expanding(min_periods=24).mean()) / nfci.expanding(min_periods=24).std()
+            nfci_z = _expanding_zscore(df[nfci_col])
             df_eng['NFCI_Z'] = nfci_z
-            if baa_col in df.columns:
-                # Composite: equal weight NFCI + Baa spread
-                baa = df[baa_col]
-                baa_z = (baa - baa.expanding(min_periods=24).mean()) / baa.expanding(min_periods=24).std()
+            if baa_z is not None:
                 df_eng['FINANCIAL_STRESS_COMPOSITE'] = (nfci_z + baa_z) / 2
 
         # ── Tier 6: Monetary policy stance (Wright 2006) ─────────────
