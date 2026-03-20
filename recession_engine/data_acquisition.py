@@ -48,6 +48,8 @@ class RecessionDataAcquisition:
                 'USSLIND': 'CB Leading Index',
                 'T10Y2Y': 'Treasury 10Y-2Y Spread',
                 'T10Y3M': 'Treasury 10Y-3M Spread',
+                'GS2': '2-Year Treasury Constant Maturity Rate',
+                'TB3MS': '3-Month Treasury Bill Secondary Market Rate',
                 'PERMIT': 'Building Permits',
                 'HOUST': 'Housing Starts',
                 'ICSA': 'Initial Unemployment Claims',
@@ -74,10 +76,12 @@ class RecessionDataAcquisition:
                 'BAA10Y': 'Baa Corporate Bond - 10Y Treasury Spread',
                 'TEDRATE': 'TED Spread (3M LIBOR - 3M T-Bill)',
             },
-            # Financial conditions (Chicago Fed)
+            # Financial conditions (Chicago Fed) + credit spread proxies
             'financial': {
                 'NFCI': 'Chicago Fed National Financial Conditions Index',
                 'ANFCI': 'Chicago Fed Adjusted NFCI',
+                'BAMLH0A0HYM2': 'ICE BofA US High Yield OAS',
+                'BAMLC0A0CM': 'ICE BofA US Corporate Master OAS',
             },
             # Peer/reference models (for benchmarking, not used as features)
             'reference': {
@@ -182,6 +186,7 @@ class RecessionDataAcquisition:
             df_eng[f'{col}_Vol6M'] = df[col].rolling(6).std()
 
         # ── Tier 2: Term spread dynamics (Engstrom-Sharpe 2019) ──────
+        # Note: NEAR_TERM_FORWARD_SPREAD dynamics are computed separately in Tier 2b
         for spread_col in ['leading_T10Y3M', 'leading_T10Y2Y']:
             if spread_col in df.columns:
                 spread = df[spread_col]
@@ -204,6 +209,47 @@ class RecessionDataAcquisition:
                 # Spread relative to its own 2-year rolling mean
                 ma24 = spread.rolling(24, min_periods=12).mean()
                 df_eng[f'{spread_col}_vs_ma24'] = spread - ma24
+
+        # ── Tier 2b: Near-term forward spread (Engstrom & Sharpe 2019) ──
+        gs2_col = 'leading_GS2'
+        tb3ms_col = 'leading_TB3MS'
+        if gs2_col in df.columns and tb3ms_col in df.columns:
+            ntfs = df[gs2_col] - df[tb3ms_col]
+            df_eng['NEAR_TERM_FORWARD_SPREAD'] = ntfs
+
+            # Inversion flag
+            df_eng['NTFS_inverted'] = (ntfs < 0).astype(float)
+
+            # Momentum (3-month change)
+            df_eng['NTFS_momentum'] = ntfs.diff(3)
+
+            # Inversion depth
+            df_eng['NTFS_inv_depth'] = ntfs.clip(upper=0)
+
+            # Duration of inversion
+            ntfs_inv = (ntfs < 0).astype(int)
+            ntfs_groups = (ntfs_inv != ntfs_inv.shift()).cumsum()
+            df_eng['NTFS_inv_duration'] = ntfs_inv.groupby(ntfs_groups).cumsum()
+
+            # Spread relative to 2-year rolling mean
+            ntfs_ma24 = ntfs.rolling(24, min_periods=12).mean()
+            df_eng['NTFS_vs_ma24'] = ntfs - ntfs_ma24
+
+        # ── Tier 2c: Excess bond premium proxy (Gilchrist-Zakrajsek 2012) ──
+        hy_col = 'financial_BAMLH0A0HYM2'
+        ig_col = 'financial_BAMLC0A0CM'
+        if hy_col in df.columns and ig_col in df.columns:
+            ebp = df[hy_col] - df[ig_col]
+            df_eng['EBP_PROXY'] = ebp
+
+            # Expanding z-score of the EBP proxy
+            ebp_mean = ebp.expanding(min_periods=24).mean()
+            ebp_std = ebp.expanding(min_periods=24).std()
+            ebp_std = ebp_std.where(ebp_std > 1e-8, np.nan)
+            df_eng['EBP_PROXY_Z'] = (ebp - ebp_mean) / ebp_std
+
+            # At-risk flag: EBP z-score above 1.5 signals elevated risk appetite deterioration
+            df_eng['EBP_AT_RISK'] = (df_eng['EBP_PROXY_Z'] > 1.5).astype(float)
 
         # ── Tier 3: Sahm Rule (Sahm 2019) ───────────────────────────
         unrate_col = 'coincident_UNRATE'
@@ -289,6 +335,7 @@ class RecessionDataAcquisition:
             'coincident_UNRATE', 'lagging_UEMPMEAN', 'leading_ICSA',
             'lagging_ISRATIO', 'monetary_BAA10Y', 'monetary_TEDRATE',
             'financial_NFCI', 'financial_ANFCI',
+            'financial_BAMLH0A0HYM2', 'financial_BAMLC0A0CM',
         }
 
         at_risk = pd.DataFrame(index=df.index)

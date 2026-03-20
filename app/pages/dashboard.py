@@ -205,6 +205,8 @@ if 'Prob_RandomForest' in filtered_df.columns:
     predictions_dict['random_forest'] = filtered_df['Prob_RandomForest'].values
 if 'Prob_XGBoost' in filtered_df.columns:
     predictions_dict['xgboost'] = filtered_df['Prob_XGBoost'].values
+if 'Prob_MarkovSwitching' in filtered_df.columns:
+    predictions_dict['markov_switching'] = filtered_df['Prob_MarkovSwitching'].values
 
 # Collect peer/reference model data
 peer_models = {}

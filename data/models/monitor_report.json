@@ -1,42 +1,43 @@
 {
-  "timestamp": "2026-03-19T20:55:22.192605",
+  "timestamp": "2026-03-19T21:45:05.813286",
   "checks": {
     "prediction_stability": {
       "status": "OK",
       "details": {
-        "current_6m_vol": 0.0493,
-        "historical_mean_vol": 0.0618,
-        "historical_max_vol": 0.302,
-        "last_mom_change": 0.0435
+        "current_6m_vol": 0.0176,
+        "historical_mean_vol": 0.0444,
+        "historical_max_vol": 0.2766,
+        "last_mom_change": 0.0071
       }
     },
     "model_disagreement": {
-      "status": "OK",
+      "status": "WARNING",
       "details": {
-        "current_spread": 0.1842,
-        "current_std": 0.0964,
+        "current_spread": 0.6348,
+        "current_std": 0.3016,
         "model_predictions": {
-          "Probit": 0.2187,
-          "RandomForest": 0.0771,
-          "XGBoost": 0.2613
+          "Probit": 0.1432,
+          "RandomForest": 0.0154,
+          "XGBoost": 0.018,
+          "MarkovSwitching": 0.6501
         },
-        "mean_historical_spread": 0.1195,
-        "p95_historical_spread": 0.3324
+        "mean_historical_spread": 0.4553,
+        "p95_historical_spread": 0.9795
       }
     },
     "feature_drift": {
       "status": "WARNING",
       "details": {
-        "features_checked": 66,
-        "features_drifted": 55,
-        "mean_psi": 5.0803,
+        "features_checked": 70,
+        "features_drifted": 62,
+        "mean_psi": 5.3565,
         "max_psi": 9.2627,
         "top_drifted": {
           "financial_NFCI_MA6": 9.263,
+          "leading_TB3MS_MA3": 9.219,
           "monetary_DFF": 9.166,
           "SAHM_INDICATOR": 9.157,
-          "leading_T10Y3M_inv_duration": 8.844,
-          "financial_ANFCI_MA6": 8.632
+          "leading_T10Y3M_inv_duration": 8.844
         }
       }
     },
@@ -44,9 +45,9 @@
       "status": "WARNING",
       "details": {
         "window_months": 24,
-        "mean_predicted": 0.2038,
+        "mean_predicted": 0.241,
         "observed_rate": 0.0,
-        "calibration_gap": 0.2038,
+        "calibration_gap": 0.241,
         "observed_months": 18
       }
     },
@@ -61,15 +62,20 @@
   "alerts": [
     {
       "level": "WARNING",
+      "check": "model_disagreement",
+      "message": "High model disagreement: spread=63.5%. Models: Probit=14.3%, RandomForest=1.5%, XGBoost=1.8%, MarkovSwitching=65.0%"
+    },
+    {
+      "level": "WARNING",
       "check": "feature_drift",
-      "message": "55 features show significant drift (PSI>0.2). Top: financial_NFCI_MA6=9.26, monetary_DFF=9.17, SAHM_INDICATOR=9.16"
+      "message": "62 features show significant drift (PSI>0.2). Top: financial_NFCI_MA6=9.26, leading_TB3MS_MA3=9.22, monetary_DFF=9.17"
     },
     {
       "level": "INFO",
       "check": "calibration",
-      "message": "Calibration gap: predicted mean=20.4%, observed rate=0.0% over last 24 months"
+      "message": "Calibration gap: predicted mean=24.1%, observed rate=0.0% over last 24 months"
     }
   ],
-  "alert_count": 2,
+  "alert_count": 3,
   "status": "WARNING"
 }

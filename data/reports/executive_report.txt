@@ -1,34 +1,39 @@
 ================================================================================
 RECESSION PREDICTION ENGINE — EXECUTIVE REPORT
-Report Generated: 2026-03-19 20:54:46
+Report Generated: 2026-03-19 21:44:30
 ================================================================================
 
 RECESSION PROBABILITY — 6 MONTHS FORWARD
 As of: 2025-09-30
-Decision Threshold: 0.220 (optimized via Youden's J)
+Decision Threshold: 0.310 (optimized via Youden's J)
 --------------------------------------------------------------------------------
 
 MODEL PREDICTIONS:
-  PROBIT              :  21.0%  (weight: 0.375)
-  RANDOM_FOREST       :  23.1%  (weight: 0.322)
-  XGBOOST             :  34.0%  (weight: 0.302)
-  ENSEMBLE            :  25.6%  (weighted combination)
+  PROBIT              :  16.3%  (weight: 0.355)
+  RANDOM_FOREST       :  12.8%  (weight: 0.250)
+  XGBOOST             :   4.4%  (weight: 0.247)
+  MARKOV_SWITCHING    :  99.0%  (weight: 0.148)
+  ENSEMBLE            :  24.7%  (weighted combination)
 
 ================================================================================
-SIGNAL: HIGH RISK — Recession probability exceeds optimized threshold
+SIGNAL: ELEVATED RISK — Approaching recession threshold
 
 ================================================================================
 METHODOLOGY:
-  Models: L1-Probit, Random Forest (300 trees), XGBoost (400 rounds)
+  Models: L1-Probit, Random Forest (300 trees), XGBoost (400 rounds),
+          Markov-Switching Regime Model (2-state Hamilton filter)
+  Preprocessing: PCA factor extraction (top 5 components augment features)
   Class weighting: Balanced (accounts for ~12% recession base rate)
   Calibration: Isotonic regression via time-series cross-validation
-  Ensemble: Performance-weighted (inverse Brier score)
+  Ensemble: Dynamic Model Averaging (exponential forgetting, lambda=0.99)
   Threshold: Youden's J statistic (maximizes sensitivity + specificity)
-  Features: 69 selected from correlation + RF importance
+  Features: 73 selected from correlation + RF importance
   Includes: At-risk transforms, Sahm Rule, term spread dynamics,
+            near-term forward spread, excess bond premium proxy,
             credit stress index, monetary policy stance interaction
 
   References:
   - Estrella & Mishkin (1998), Wright (2006), Sahm (2019)
   - Billakanti & Shin (2025), Engstrom & Sharpe (2019)
+  - Gilchrist & Zakrajsek (2012), Raftery et al. (2010) [DMA]
 ================================================================================

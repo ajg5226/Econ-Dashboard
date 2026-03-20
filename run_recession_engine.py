@@ -187,6 +187,8 @@ def main():
     }
     if 'xgboost' in predictions:
         data_dict['Prob_XGBoost'] = predictions['xgboost']
+    if 'markov_switching' in predictions:
+        data_dict['Prob_MarkovSwitching'] = predictions['markov_switching']
     dashboard_df = pd.DataFrame(data_dict)
     
     dashboard_df.to_csv('output/dashboard_data.csv', index=False)

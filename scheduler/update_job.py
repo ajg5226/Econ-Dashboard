@@ -263,6 +263,8 @@ def run_update_job(horizon_months=6, train_end_date=None):
         }
         if 'xgboost' in predictions:
             data_dict['Prob_XGBoost'] = predictions['xgboost']
+        if 'markov_switching' in predictions:
+            data_dict['Prob_MarkovSwitching'] = predictions['markov_switching']
 
         predictions_df = pd.DataFrame(data_dict)
 
@@ -282,6 +284,8 @@ def run_update_job(horizon_months=6, train_end_date=None):
             }
             if 'xgboost' in nowcast_preds:
                 nowcast_dict['Prob_XGBoost'] = nowcast_preds['xgboost']
+            if 'markov_switching' in nowcast_preds:
+                nowcast_dict['Prob_MarkovSwitching'] = nowcast_preds['markov_switching']
 
             nowcast_pred_df = pd.DataFrame(nowcast_dict)
             predictions_df = pd.concat([predictions_df, nowcast_pred_df], ignore_index=True)

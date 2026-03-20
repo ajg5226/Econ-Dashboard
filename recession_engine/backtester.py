@@ -55,11 +55,15 @@ PUBLICATION_LAGS = {
     # These are available with minimal lag:
     'leading_T10Y2Y': 0,         # Market data — real-time
     'leading_T10Y3M': 0,
+    'leading_GS2': 0,            # Market data — real-time
+    'leading_TB3MS': 0,          # Market data — real-time
     'monetary_DFF': 0,
     'monetary_BAA10Y': 0,
     'monetary_TEDRATE': 0,
     'financial_NFCI': 0,         # Weekly release
     'financial_ANFCI': 0,
+    'financial_BAMLH0A0HYM2': 0, # ICE BofA — daily
+    'financial_BAMLC0A0CM': 0,   # ICE BofA — daily
     'leading_ICSA': 0,           # Weekly claims
     'leading_UMCSENT': 0,        # Monthly survey
     'coincident_UNRATE': 1,
@@ -178,7 +182,7 @@ class RecessionBacktester:
                 }
 
                 # Per-model peak probabilities
-                for mname in ['probit', 'random_forest', 'xgboost']:
+                for mname in ['probit', 'random_forest', 'xgboost', 'markov_switching']:
                     if mname in predictions:
                         result[f'Peak_{mname}'] = np.max(predictions[mname])
 
