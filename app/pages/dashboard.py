@@ -219,10 +219,13 @@ if 'Ref_JHGDPBRINDX' in filtered_df.columns:
         # Hamilton GDP indicator is 0-100 scale, convert to 0-1
         peer_models['Hamilton GDP Index'] = ref_series / 100.0
 
-# Create recession indicator series
-# BUG FIX 7: Fix get() returning scalar instead of Series
-if 'Actual_Recession' in filtered_df.columns:
-    recession_series = filtered_df['Actual_Recession']
+# Create recession indicator series for chart shading
+# Use Recession_Current (actual NBER recession months) for shading,
+# NOT Actual_Recession (which is the forward target)
+if 'Recession_Current' in filtered_df.columns:
+    recession_series = filtered_df['Recession_Current'].fillna(0)
+elif 'Actual_Recession' in filtered_df.columns:
+    recession_series = filtered_df['Actual_Recession'].fillna(0)
 else:
     recession_series = pd.Series(0, index=filtered_df.index)
 
@@ -253,9 +256,10 @@ st.plotly_chart(fig, use_container_width=True)
 # Peer model comparison callout
 if peer_models:
     st.markdown("#### Peer Model Comparison")
+    st.caption("Our model forecasts 6 months ahead; peer models estimate current recession probability. Some divergence is expected.")
     peer_cols = st.columns(len(peer_models) + 1)
     with peer_cols[0]:
-        st.metric("Our Ensemble", f"{latest_prob:.1%}")
+        st.metric("Our Ensemble (6M forward)", f"{latest_prob:.1%}")
     for i, (peer_name, peer_vals) in enumerate(peer_models.items()):
         with peer_cols[i + 1]:
             peer_latest = peer_vals[~pd.isna(peer_vals)][-1] if not pd.isna(peer_vals).all() else None

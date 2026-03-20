@@ -244,9 +244,15 @@ def run_update_job(horizon_months=6, train_end_date=None):
         logger.info("=" * 100)
 
         # Build test-set predictions
+        # IMPORTANT: Actual_Recession must be the FORWARD target (RECESSION_FORWARD_6M),
+        # not the current month's RECESSION flag. The model predicts P(recession in next
+        # 6 months), so evaluation must compare against whether a recession actually
+        # occurred in the next 6 months.
+        target_col = f'RECESSION_FORWARD_{horizon_months}M'
         data_dict = {
             'Date': test_df.index,
-            'Actual_Recession': test_df['RECESSION'].values,
+            'Actual_Recession': test_df[target_col].values,
+            'Recession_Current': test_df['RECESSION'].values,
             'Prob_Ensemble': predictions['ensemble'],
             'Prob_Probit': predictions['probit'],
             'Prob_RandomForest': predictions['random_forest'],
@@ -264,7 +270,8 @@ def run_update_job(horizon_months=6, train_end_date=None):
         if len(nowcast_df) > 0:
             nowcast_dict = {
                 'Date': nowcast_df.index,
-                'Actual_Recession': nowcast_df['RECESSION'].values,
+                'Actual_Recession': np.nan,  # Forward target unknown for nowcast
+                'Recession_Current': nowcast_df['RECESSION'].values,
                 'Prob_Ensemble': nowcast_preds['ensemble'],
                 'Prob_Probit': nowcast_preds['probit'],
                 'Prob_RandomForest': nowcast_preds['random_forest'],

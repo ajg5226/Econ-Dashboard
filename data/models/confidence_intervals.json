@@ -2,8 +2,8 @@
   "ci_level": 0.9,
   "n_bootstrap": 200,
   "method": "Dirichlet weight perturbation",
-  "latest_ci_lower": 0.2408904837468387,
-  "latest_ci_upper": 0.2776253764923099,
+  "latest_ci_lower": 0.24089048374683877,
+  "latest_ci_upper": 0.27762537649230995,
   "latest_model_spread": 0.13004352686169382,
-  "timestamp": "2026-03-19T13:21:51.217021"
+  "timestamp": "2026-03-19T20:54:46.550783"
 }

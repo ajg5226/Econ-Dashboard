@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-03-19T13:22:23.439419",
+  "timestamp": "2026-03-19T20:55:22.192605",
   "checks": {
     "prediction_stability": {
       "status": "OK",
@@ -16,7 +16,7 @@
         "current_spread": 0.1842,
         "current_std": 0.0964,
         "model_predictions": {
-          "Probit": 0.2186,
+          "Probit": 0.2187,
           "RandomForest": 0.0771,
           "XGBoost": 0.2613
         },
@@ -29,14 +29,14 @@
       "details": {
         "features_checked": 66,
         "features_drifted": 55,
-        "mean_psi": 7.3582,
-        "max_psi": 13.2941,
+        "mean_psi": 5.0803,
+        "max_psi": 9.2627,
         "top_drifted": {
-          "financial_NFCI_MA6": 13.294,
-          "monetary_DFF": 12.812,
-          "SAHM_INDICATOR": 12.804,
-          "leading_T10Y3M_inv_duration": 12.491,
-          "financial_ANFCI_MA6": 12.279
+          "financial_NFCI_MA6": 9.263,
+          "monetary_DFF": 9.166,
+          "SAHM_INDICATOR": 9.157,
+          "leading_T10Y3M_inv_duration": 8.844,
+          "financial_ANFCI_MA6": 8.632
         }
       }
     },
@@ -46,7 +46,8 @@
         "window_months": 24,
         "mean_predicted": 0.2038,
         "observed_rate": 0.0,
-        "calibration_gap": 0.2038
+        "calibration_gap": 0.2038,
+        "observed_months": 18
       }
     },
     "data_freshness": {
@@ -61,7 +62,7 @@
     {
       "level": "WARNING",
       "check": "feature_drift",
-      "message": "55 features show significant drift (PSI>0.2). Top: financial_NFCI_MA6=13.29, monetary_DFF=12.81, SAHM_INDICATOR=12.80"
+      "message": "55 features show significant drift (PSI>0.2). Top: financial_NFCI_MA6=9.26, monetary_DFF=9.17, SAHM_INDICATOR=9.16"
     },
     {
       "level": "INFO",

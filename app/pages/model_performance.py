@@ -294,12 +294,12 @@ if 'Actual_Recession' in predictions_df.columns:
         known_df = predictions_df.dropna(subset=['Actual_Recession'])
         recession_count = int(known_df['Actual_Recession'].sum())
         nowcast_count = len(predictions_df) - len(known_df)
-        st.info(f"**Recession Months:** {recession_count}")
-        st.info(f"**Non-Recession Months:** {len(known_df) - recession_count}")
+        st.info(f"**Positive (recession within 6M):** {recession_count}")
+        st.info(f"**Negative (no recession within 6M):** {len(known_df) - recession_count}")
         if nowcast_count > 0:
-            st.info(f"**Nowcast Months (no actuals):** {nowcast_count}")
-        if len(predictions_df) > 0:
-            st.info(f"**Recession Rate:** {recession_count / len(predictions_df):.1%}")
+            st.info(f"**Nowcast Months (outcome unknown):** {nowcast_count}")
+        if len(known_df) > 0:
+            st.info(f"**Positive Rate:** {recession_count / len(known_df):.1%}")
 
     # ── Confidence Intervals ─────────────────────────────────────────────────
     if ci_info:
