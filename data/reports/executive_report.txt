@@ -1,22 +1,22 @@
 ================================================================================
 RECESSION PREDICTION ENGINE — EXECUTIVE REPORT
-Report Generated: 2026-03-19 21:44:30
+Report Generated: 2026-03-19 21:58:11
 ================================================================================
 
 RECESSION PROBABILITY — 6 MONTHS FORWARD
 As of: 2025-09-30
-Decision Threshold: 0.310 (optimized via Youden's J)
+Decision Threshold: 0.260 (optimized via Youden's J)
 --------------------------------------------------------------------------------
 
 MODEL PREDICTIONS:
-  PROBIT              :  16.3%  (weight: 0.355)
-  RANDOM_FOREST       :  12.8%  (weight: 0.250)
-  XGBOOST             :   4.4%  (weight: 0.247)
-  MARKOV_SWITCHING    :  99.0%  (weight: 0.148)
-  ENSEMBLE            :  24.7%  (weighted combination)
+  PROBIT              :  16.3%  (weight: 0.396)
+  RANDOM_FOREST       :  12.8%  (weight: 0.279)
+  XGBOOST             :   4.4%  (weight: 0.275)
+  MARKOV_SWITCHING    :  99.0%  (weight: 0.050)
+  ENSEMBLE            :  16.2%  (weighted combination)
 
 ================================================================================
-SIGNAL: ELEVATED RISK — Approaching recession threshold
+SIGNAL: MODERATE RISK — Monitor closely
 
 ================================================================================
 METHODOLOGY:

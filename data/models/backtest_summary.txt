@@ -1,6 +1,6 @@
 Recessions tested: 6
-Mean AUC: 0.840 (range: 0.564–0.946)
-Mean Brier: 0.2387
-Mean peak probability: 52.6%
+Mean AUC: 0.848 (range: 0.534–0.977)
+Mean Brier: 0.2637
+Mean peak probability: 46.3%
 Recessions detected (crossed threshold): 6/6
-Mean lead time: -1 months
+Mean lead time: -2 months

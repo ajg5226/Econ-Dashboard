@@ -601,29 +601,15 @@ class RecessionEnsembleModel:
         More recent CV fold performance is weighted more heavily.
         This allows the ensemble to adapt to structural changes in the economy.
 
-        Uses negative log-Brier as the score (avoids extreme ratios from
-        1/brier when Brier scores are very small) and softmax normalization
-        to prevent weight collapse onto a single model.
+        The Markov-switching model is capped at 5% ensemble weight because:
+        - It's a regime model, not a calibrated probability forecaster
+        - It tends to get stuck in "recession regime" during unusual-but-not-recessionary
+          macro environments (e.g., post-2022 rate hiking cycle)
+        - Its value is as a complementary signal, not a primary probability estimate
         """
         n_folds = len(next(iter(cv_fold_scores.values())))
-        scores = {}
 
-        for name in cv_fold_scores:
-            fold_briers = cv_fold_scores[name]
-            # Compute time-weighted average Brier score (more recent folds weighted more)
-            weighted_brier = 0
-            total_weight = 0
-            for i, brier in enumerate(fold_briers):
-                w = forgetting_factor ** (n_folds - 1 - i)  # More recent = higher weight
-                weighted_brier += w * brier
-                total_weight += w
-            avg_brier = weighted_brier / total_weight
-            # Use negative Brier as score (lower Brier = higher score)
-            scores[name] = -avg_brier
-
-        # Inverse Brier weighting with minimum weight floor
-        # This gives appropriate weight to performance differences while
-        # preventing complete collapse onto a single model
+        # Inverse Brier weighting with exponential forgetting
         raw_weights = {}
         for name in cv_fold_scores:
             fold_briers = cv_fold_scores[name]
@@ -634,11 +620,25 @@ class RecessionEnsembleModel:
                 weighted_brier += w * brier
                 total_weight += w
             avg_brier = weighted_brier / total_weight
-            raw_weights[name] = 1.0 / (avg_brier + 0.01)  # +0.01 prevents extreme ratios
+            raw_weights[name] = 1.0 / (avg_brier + 0.01)
 
         # Normalize
         total = sum(raw_weights.values())
         weights = {name: w / total for name, w in raw_weights.items()}
+
+        # Cap Markov-switching weight: regime models are useful as a complementary
+        # signal but produce poorly-calibrated probabilities (often stuck at 0% or 99%).
+        # Redistribute excess weight proportionally to supervised models.
+        ms_cap = 0.05
+        if 'markov_switching' in weights and weights['markov_switching'] > ms_cap:
+            excess = weights['markov_switching'] - ms_cap
+            weights['markov_switching'] = ms_cap
+            # Redistribute to supervised models proportionally
+            supervised = {k: v for k, v in weights.items() if k != 'markov_switching'}
+            sup_total = sum(supervised.values())
+            if sup_total > 0:
+                for k in supervised:
+                    weights[k] += excess * (supervised[k] / sup_total)
 
         # Apply minimum weight floor (2%) and renormalize
         min_weight = 0.02

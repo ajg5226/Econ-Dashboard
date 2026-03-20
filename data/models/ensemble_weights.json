@@ -1,6 +1,6 @@
 {
-  "probit": 0.355068609147495,
-  "random_forest": 0.25031847225738385,
-  "xgboost": 0.2466927009767106,
-  "markov_switching": 0.1479202176184106
+  "probit": 0.3958727641058609,
+  "random_forest": 0.27908483872231915,
+  "xgboost": 0.27504239717182,
+  "markov_switching": 0.05
 }

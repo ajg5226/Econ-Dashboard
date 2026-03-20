@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-03-19T21:45:05.813286",
+  "timestamp": "2026-03-19T21:58:43.735823",
   "checks": {
     "prediction_stability": {
       "status": "OK",
       "details": {
-        "current_6m_vol": 0.0176,
-        "historical_mean_vol": 0.0444,
-        "historical_max_vol": 0.2766,
-        "last_mom_change": 0.0071
+        "current_6m_vol": 0.0106,
+        "historical_mean_vol": 0.0434,
+        "historical_max_vol": 0.306,
+        "last_mom_change": 0.0005
       }
     },
     "model_disagreement": {
@@ -45,9 +45,9 @@
       "status": "WARNING",
       "details": {
         "window_months": 24,
-        "mean_predicted": 0.241,
+        "mean_predicted": 0.1726,
         "observed_rate": 0.0,
-        "calibration_gap": 0.241,
+        "calibration_gap": 0.1726,
         "observed_months": 18
       }
     },
@@ -73,7 +73,7 @@
     {
       "level": "INFO",
       "check": "calibration",
-      "message": "Calibration gap: predicted mean=24.1%, observed rate=0.0% over last 24 months"
+      "message": "Calibration gap: predicted mean=17.3%, observed rate=0.0% over last 24 months"
     }
   ],
   "alert_count": 3,
