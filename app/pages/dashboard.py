@@ -110,14 +110,24 @@ horizon = st.sidebar.selectbox(
     format_func=lambda x: f"{x} months"
 )
 
-# Threshold selector
+# Threshold selector — load optimized threshold as default
+import json
+_default_threshold = 0.5
+try:
+    _threshold_path = Path(__file__).parent.parent.parent / "data" / "models" / "threshold.json"
+    if _threshold_path.exists():
+        with open(_threshold_path) as _f:
+            _default_threshold = json.load(_f).get('decision_threshold', 0.5)
+except Exception:
+    pass
+
 threshold = st.sidebar.slider(
     "Decision Threshold",
     min_value=0.0,
     max_value=1.0,
-    value=0.5,
+    value=round(_default_threshold, 2),
     step=0.05,
-    help="Probability threshold for recession prediction"
+    help="Probability threshold for recession prediction (default: model-optimized via Youden's J)"
 )
 
 # Main content
@@ -251,6 +261,7 @@ fig = plot_recession_probability(
     ci_lower=ci_lower,
     ci_upper=ci_upper,
     peer_models=peer_models if peer_models else None,
+    threshold=threshold,
 )
 
 st.plotly_chart(fig, use_container_width=True)

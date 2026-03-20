@@ -28,6 +28,7 @@ def plot_recession_probability(
     ci_lower: np.ndarray = None,
     ci_upper: np.ndarray = None,
     peer_models: dict = None,
+    threshold: float = None,
 ):
     """
     Create interactive recession probability chart
@@ -106,10 +107,17 @@ def plot_recession_probability(
     model_colors = {
         'probit': 'blue',
         'random_forest': 'green',
-        'xgboost': 'orange'
+        'xgboost': 'orange',
+        'markov_switching': 'purple',
     }
-    
-    for model_name in ['probit', 'random_forest', 'xgboost']:
+    model_display_names = {
+        'probit': 'Probit',
+        'random_forest': 'Random Forest',
+        'xgboost': 'XGBoost',
+        'markov_switching': 'Markov Switching',
+    }
+
+    for model_name in ['probit', 'random_forest', 'xgboost', 'markov_switching']:
         if model_name in predictions:
             pred_array = np.array(predictions[model_name])
             # Ensure length matches
@@ -118,15 +126,16 @@ def plot_recession_probability(
                     pred_array = pred_array[:len(df)]
                 else:
                     pred_array = np.pad(pred_array, (0, len(df) - len(pred_array)), mode='edge')
-            
+
+            display_name = model_display_names.get(model_name, model_name.replace('_', ' ').title())
             fig.add_trace(go.Scatter(
                 x=df.index,
                 y=pred_array,
                 mode='lines',
-                name=model_name.replace('_', ' ').title(),
+                name=display_name,
                 line=dict(color=model_colors.get(model_name, 'gray'), width=2, dash='dash'),
                 opacity=0.7,
-                hovertemplate=f'<b>{model_name}</b><br>Date: %{{x}}<br>Probability: %{{y:.1%}}<extra></extra>'
+                hovertemplate=f'<b>{display_name}</b><br>Date: %{{x}}<br>Probability: %{{y:.1%}}<extra></extra>'
             ))
     
     # Plot peer/reference model probabilities (if provided)
@@ -150,24 +159,39 @@ def plot_recession_probability(
                 hovertemplate=f'<b>{peer_name}</b><br>Date: %{{x}}<br>Probability: %{{y:.1%}}<extra></extra>'
             ))
 
-    # Shade recession periods
-    recession_periods = df[df['RECESSION'] == 1]
-    for idx in recession_periods.index:
-        fig.add_vrect(
-            x0=idx,
-            x1=idx,
-            fillcolor="gray",
-            opacity=0.2,
-            layer="below",
-            line_width=0,
-        )
+    # Shade recession periods as contiguous bands
+    if 'RECESSION' in df.columns:
+        recession_mask = df['RECESSION'].fillna(0).astype(float) == 1
+        # Find contiguous recession blocks
+        if recession_mask.any():
+            # Detect transitions: start when mask goes True, end when it goes False
+            shifted = recession_mask.shift(1, fill_value=False)
+            starts = df.index[recession_mask & ~shifted]
+            ends = df.index[~recession_mask & shifted]
+
+            # Handle case where recession extends to the end of the series
+            if len(starts) > len(ends):
+                ends = ends.append(pd.DatetimeIndex([df.index[-1]]))
+
+            for start, end in zip(starts, ends):
+                # Extend end by ~1 month to fill the gap visually
+                fig.add_vrect(
+                    x0=start,
+                    x1=end + pd.DateOffset(months=1),
+                    fillcolor="gray",
+                    opacity=0.15,
+                    layer="below",
+                    line_width=0,
+                    annotation_text="",
+                )
 
     # Add threshold line
+    thresh_val = threshold if threshold is not None else 0.5
     fig.add_hline(
-        y=0.5,
+        y=thresh_val,
         line_dash="dash",
         line_color="orange",
-        annotation_text="Threshold (0.5)",
+        annotation_text=f"Threshold ({thresh_val:.0%})",
         annotation_position="right"
     )
     
@@ -213,10 +237,10 @@ def _plot_recession_probability_matplotlib(df, predictions, start_date, end_date
         ax.plot(df.index, predictions['ensemble'], label='Ensemble', linewidth=2, color='darkred')
     
     # Plot base models
-    for model_name in ['probit', 'random_forest', 'xgboost']:
+    for model_name in ['probit', 'random_forest', 'xgboost', 'markov_switching']:
         if model_name in predictions:
-            ax.plot(df.index, predictions[model_name], 
-                   label=model_name.replace('_', ' ').title(), 
+            ax.plot(df.index, predictions[model_name],
+                   label=model_name.replace('_', ' ').title(),
                    linewidth=1.5, alpha=0.7, linestyle='--')
     
     # Shade recession periods
