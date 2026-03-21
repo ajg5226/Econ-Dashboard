@@ -13,7 +13,7 @@ A secure, login-enabled web application for viewing and managing recession proba
 
 ## 📋 Prerequisites
 
-- Python 3.9+
+- Python 3.11+
 - FRED API key (free from https://fred.stlouisfed.org/)
 - Git (for deployment)
 
@@ -156,7 +156,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: actions/setup-python@v2
         with:
-          python-version: '3.9'
+          python-version: '3.11'
       - run: pip install -r requirements.txt
       - run: python scheduler/update_job.py
         env:
@@ -289,7 +289,7 @@ python -m pytest tests/test_scheduler.py
 ### "Module not found" errors
 
 - Install dependencies: `pip install -r requirements.txt`
-- Check Python version: `python --version` (should be 3.9+)
+- Check Python version: `python --version` (should be 3.11+)
 
 ### Scheduler not running
 

@@ -18,11 +18,13 @@ try:
     from app.utils.cache_manager import load_predictions_cached
     from app.utils.plotting import plot_recession_probability
     from app.auth import check_authentication, is_admin
+    from scheduler.scheduler_config import load_runtime_config
 except ImportError:
     from utils.data_loader import load_predictions, is_data_stale, get_last_update_time
     from utils.cache_manager import load_predictions_cached
     from utils.plotting import plot_recession_probability
     from auth import check_authentication, is_admin
+    from scheduler.scheduler_config import load_runtime_config
 
 # Check authentication
 authenticated, username, name = check_authentication()
@@ -68,6 +70,7 @@ if last_update:
 
 # Sidebar filters
 st.sidebar.markdown("### Filters")
+runtime_config = load_runtime_config()
 
 # Date range selector
 # BUG FIX 3: Handle empty index after filtering
@@ -106,9 +109,28 @@ else:
 horizon = st.sidebar.selectbox(
     "Prediction Horizon",
     options=[3, 6, 12],
-    index=1,  # Default to 6 months
+    index=[3, 6, 12].index(int(runtime_config.get('horizon_months', 6))),
     format_func=lambda x: f"{x} months"
 )
+
+# Apply horizon filter if dataset supports multi-horizon rows.
+if 'Forecast_Horizon' in filtered_df.columns:
+    available_horizons = sorted(
+        pd.to_numeric(filtered_df['Forecast_Horizon'], errors='coerce').dropna().astype(int).unique().tolist()
+    )
+    if horizon in available_horizons:
+        filtered_df = filtered_df[filtered_df['Forecast_Horizon'].astype(int) == horizon]
+    elif available_horizons:
+        fallback_horizon = available_horizons[-1]
+        st.sidebar.warning(
+            f"{horizon}M forecast is not available in current data; showing {fallback_horizon}M instead."
+        )
+        horizon = fallback_horizon
+        filtered_df = filtered_df[filtered_df['Forecast_Horizon'].astype(int) == horizon]
+else:
+    if horizon != 6:
+        st.sidebar.info("Current predictions file contains only 6M forecasts. Switch after next retrain.")
+        horizon = 6
 
 # Threshold selector — load optimized threshold as default
 import json
@@ -217,6 +239,8 @@ if 'Prob_XGBoost' in filtered_df.columns:
     predictions_dict['xgboost'] = filtered_df['Prob_XGBoost'].values
 if 'Prob_MarkovSwitching' in filtered_df.columns:
     predictions_dict['markov_switching'] = filtered_df['Prob_MarkovSwitching'].values
+if 'Prob_LSTM' in filtered_df.columns:
+    predictions_dict['lstm'] = filtered_df['Prob_LSTM'].values
 
 # Collect peer/reference model data
 peer_models = {}
@@ -269,10 +293,10 @@ st.plotly_chart(fig, use_container_width=True)
 # Peer model comparison callout
 if peer_models:
     st.markdown("#### Peer Model Comparison")
-    st.caption("Our model forecasts 6 months ahead; peer models estimate current recession probability. Some divergence is expected.")
+    st.caption(f"Our model forecasts {horizon} months ahead; peer models estimate current recession probability. Some divergence is expected.")
     peer_cols = st.columns(len(peer_models) + 1)
     with peer_cols[0]:
-        st.metric("Our Ensemble (6M forward)", f"{latest_prob:.1%}")
+        st.metric(f"Our Ensemble ({horizon}M forward)", f"{latest_prob:.1%}")
     for i, (peer_name, peer_vals) in enumerate(peer_models.items()):
         with peer_cols[i + 1]:
             peer_latest = peer_vals[~pd.isna(peer_vals)][-1] if not pd.isna(peer_vals).all() else None

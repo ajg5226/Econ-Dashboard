@@ -32,7 +32,8 @@ class TestEnsembleModel(unittest.TestCase):
             'RECESSION': np.random.randint(0, 2, 100)
         }, index=dates)
         
-        train_df, test_df = self.model.prepare_data(df, train_end_date='2020-08-01')
+        # Use default expanding split to avoid tiny train folds that can contain one class
+        train_df, test_df = self.model.prepare_data(df)
         
         self.assertIsInstance(train_df, pd.DataFrame)
         self.assertIsInstance(test_df, pd.DataFrame)
@@ -73,7 +74,8 @@ class TestEnsembleModel(unittest.TestCase):
             'RECESSION': target
         }, index=dates)
         
-        train_df, test_df = self.model.prepare_data(df, train_end_date='2020-08-01')
+        # Use default expanding split to avoid tiny train folds with one class.
+        train_df, test_df = self.model.prepare_data(df)
         
         # Fit model
         self.model.fit(train_df, feature_cols=['feature1', 'feature2'])

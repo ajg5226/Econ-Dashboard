@@ -5,6 +5,9 @@ on:
     - cron: '0 3 * * 0'  # Sunday 3 AM UTC
   workflow_dispatch:  # Allows manual trigger from GitHub UI
 
+permissions:
+  contents: write
+
 jobs:
   update:
     runs-on: ubuntu-latest
@@ -34,6 +37,6 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add data/ || true
+          git add data/
           git diff --staged --quiet || git commit -m "Weekly data refresh $(date +'%Y-%m-%d')"
-          git push || true
+          git push

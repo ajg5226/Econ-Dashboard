@@ -4,7 +4,7 @@ Get the Recession Prediction Web App running in 5 minutes!
 
 ## Prerequisites
 
-- Python 3.9 or higher
+- Python 3.11 or higher
 - FRED API key (free from https://fred.stlouisfed.org/)
 
 ## Installation

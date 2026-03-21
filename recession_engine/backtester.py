@@ -67,6 +67,13 @@ PUBLICATION_LAGS = {
     'leading_ICSA': 0,           # Weekly claims
     'leading_UMCSENT': 0,        # Monthly survey
     'coincident_UNRATE': 1,
+    # Tier 1 new series (2024-2026 literature)
+    'housing_CSUSHPINSA': 2,     # Case-Shiller: ~2 month lag
+    'term_structure_THREEFYTP10': 0,  # Fed model — published with minimal lag
+    'coincident_IURSA': 0,       # Insured unemployment — weekly administrative data
+    'leading_PRFI': 2,           # BEA quarterly, interpolated monthly — ~2 month lag
+    'leading_PCDG': 1,           # BEA personal consumption — ~1 month lag
+    'leading_PNFI': 2,           # BEA quarterly, interpolated monthly — ~2 month lag
 }
 
 
@@ -303,6 +310,148 @@ class RecessionBacktester:
                 })
 
         return pd.DataFrame(results)
+
+    def _fetch_series_as_of(self, series_id: str, as_of_date: str, start_date: str = '1970-01-01'):
+        """
+        Fetch a single FRED/ALFRED series as known on a specific vintage date.
+        Falls back gracefully if ALFRED methods are unavailable.
+        """
+        fred = getattr(self.acq, "fred", None)
+        if fred is None:
+            return None
+
+        # Preferred ALFRED vintage method.
+        if hasattr(fred, "get_series_as_of_date"):
+            try:
+                return fred.get_series_as_of_date(
+                    series_id,
+                    as_of_date=as_of_date,
+                    observation_start=start_date,
+                    observation_end=as_of_date
+                )
+            except Exception:
+                return None
+        return None
+
+    def run_alfred_vintage_backtest(self, df_raw, key_dates=None, core_series=None):
+        """
+        ALFRED-backed vintage evaluation.
+
+        For each key date:
+        1) Replace a core subset of revised indicators with ALFRED as-of vintages.
+        2) Re-run feature engineering + model fit/predict at that date.
+        3) Compare revised-data probability vs vintage-data probability.
+
+        Returns:
+            DataFrame with per-date revised vs vintage probabilities and metadata.
+        """
+        if key_dates is None:
+            key_dates = [
+                ('2007-06', 'Pre-GFC'),
+                ('2007-12', 'GFC peak month'),
+                ('2019-12', 'Pre-COVID'),
+                ('2020-03', 'COVID shock month'),
+                ('2024-06', 'Recent cycle'),
+            ]
+
+        if core_series is None:
+            core_series = [
+                'leading_T10Y3M', 'leading_T10Y2Y', 'leading_ICSA', 'leading_USSLIND',
+                'coincident_PAYEMS', 'coincident_UNRATE', 'coincident_INDPRO',
+                'monetary_DFF', 'monetary_BAA10Y', 'financial_NFCI'
+            ]
+
+        # Verify ALFRED capability first.
+        fred = getattr(self.acq, "fred", None)
+        if fred is None or not hasattr(fred, "get_series_as_of_date"):
+            return pd.DataFrame([{
+                'Date': None,
+                'Label': 'ALFRED unavailable',
+                'Error': 'fredapi get_series_as_of_date is not available in this runtime'
+            }])
+
+        results = []
+        for pred_date, label in key_dates:
+            pred_ts = pd.Timestamp(pred_date)
+            logger.info("ALFRED vintage test: %s (%s)", label, pred_date)
+            try:
+                # Revised baseline at date.
+                df_revised = df_raw[df_raw.index <= pred_ts].copy()
+                df_feat_revised = self.acq.engineer_features(df_revised)
+                df_target_revised = self.acq.create_forecast_target(df_feat_revised, self.target_horizon)
+
+                train_end = (pred_ts - pd.DateOffset(years=3)).strftime('%Y-%m-%d')
+                model_revised = self.model_class(target_horizon=self.target_horizon)
+                train_r, test_r = model_revised.prepare_data(df_target_revised, train_end_date=train_end)
+                model_revised.fit(train_r)
+                preds_r = model_revised.predict(test_r)
+                revised_prob = preds_r['ensemble'][-1] if len(preds_r['ensemble']) > 0 else np.nan
+
+                # Build vintage frame by substituting core series with ALFRED vintages.
+                df_vintage = df_revised.copy()
+                replaced_cols = 0
+                for col in core_series:
+                    if col not in df_vintage.columns:
+                        continue
+                    # Convert feature namespace column to FRED series_id, e.g. leading_T10Y3M -> T10Y3M
+                    series_id = col.split('_', 1)[1] if '_' in col else col
+                    vintage_series = self._fetch_series_as_of(series_id, pred_ts.strftime('%Y-%m-%d'))
+                    if vintage_series is None or len(vintage_series) == 0:
+                        continue
+                    vintage_series.index = pd.to_datetime(vintage_series.index)
+                    monthly = vintage_series.sort_index().resample('ME').last()
+                    aligned = monthly.reindex(df_vintage.index)
+                    if aligned.notna().any():
+                        df_vintage[col] = aligned.values
+                        replaced_cols += 1
+
+                df_feat_vintage = self.acq.engineer_features(df_vintage)
+                df_target_vintage = self.acq.create_forecast_target(df_feat_vintage, self.target_horizon)
+                model_vintage = self.model_class(target_horizon=self.target_horizon)
+                train_v, test_v = model_vintage.prepare_data(df_target_vintage, train_end_date=train_end)
+                model_vintage.fit(train_v)
+                preds_v = model_vintage.predict(test_v)
+                vintage_prob = preds_v['ensemble'][-1] if len(preds_v['ensemble']) > 0 else np.nan
+
+                results.append({
+                    'Date': pred_date,
+                    'Label': label,
+                    'Revised_Prob': revised_prob,
+                    'Vintage_Prob': vintage_prob,
+                    'Difference': revised_prob - vintage_prob if not (np.isnan(revised_prob) or np.isnan(vintage_prob)) else np.nan,
+                    'Columns_Replaced_With_ALFRED': replaced_cols,
+                    'Revised_Threshold': model_revised.decision_threshold,
+                    'Vintage_Threshold': model_vintage.decision_threshold,
+                })
+            except Exception as e:
+                results.append({
+                    'Date': pred_date,
+                    'Label': label,
+                    'Error': str(e),
+                })
+        return pd.DataFrame(results)
+
+    def summarize_alfred_results(self, alfred_df: pd.DataFrame) -> str:
+        """Summarize ALFRED vintage evaluation results for reporting/UI."""
+        if alfred_df is None or alfred_df.empty:
+            return "No ALFRED vintage results available."
+        if 'Error' in alfred_df.columns and alfred_df['Error'].notna().all():
+            return "ALFRED vintage evaluation unavailable in current runtime."
+
+        valid = alfred_df.dropna(subset=['Revised_Prob', 'Vintage_Prob'], how='any')
+        if valid.empty:
+            return "ALFRED vintage evaluation ran, but no valid probability pairs were produced."
+
+        mae = (valid['Revised_Prob'] - valid['Vintage_Prob']).abs().mean()
+        bias = (valid['Revised_Prob'] - valid['Vintage_Prob']).mean()
+        max_abs = (valid['Revised_Prob'] - valid['Vintage_Prob']).abs().max()
+
+        return (
+            f"ALFRED vintage checks: {len(valid)} date(s)\n"
+            f"Mean absolute revised-vintage gap: {mae:.2%}\n"
+            f"Mean signed gap (revised - vintage): {bias:.2%}\n"
+            f"Max absolute gap: {max_abs:.2%}"
+        )
 
     def summarize_results(self, backtest_df):
         """Generate summary statistics from backtest results."""

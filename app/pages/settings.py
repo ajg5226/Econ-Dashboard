@@ -16,10 +16,12 @@ try:
     from app.auth import check_authentication, is_admin, register_user
     from app.utils.data_loader import get_last_update_time, is_data_stale
     from app.utils.cache_manager import clear_all_caches, get_cache_info
+    from scheduler.scheduler_config import load_runtime_config, save_runtime_config
 except ImportError:
     from auth import check_authentication, is_admin, register_user
     from utils.data_loader import get_last_update_time, is_data_stale
     from utils.cache_manager import clear_all_caches, get_cache_info
+    from scheduler.scheduler_config import load_runtime_config, save_runtime_config
 
 # Check authentication
 authenticated, username, name = check_authentication()
@@ -53,6 +55,7 @@ if not is_admin(username):
 
 # Admin-only content
 st.success("🔑 Admin Access Granted")
+runtime_config = load_runtime_config()
 
 # Data Refresh Section
 st.markdown("---")
@@ -80,8 +83,18 @@ with col1:
                     # Run the update job
                     # BUG FIX: Better error handling for subprocess
                     try:
+                        cmd = [sys.executable, str(scheduler_script)]
+                        if runtime_config.get('horizon_months') is not None:
+                            cmd += ["--horizon", str(runtime_config['horizon_months'])]
+                        if runtime_config.get('train_end_date'):
+                            cmd += ["--train-end", str(runtime_config['train_end_date'])]
+                        if runtime_config.get('max_features') is not None:
+                            cmd += ["--max-features", str(runtime_config['max_features'])]
+                        if runtime_config.get('threshold_override') is not None:
+                            cmd += ["--threshold-override", str(runtime_config['threshold_override'])]
+
                         result = subprocess.run(
-                            [sys.executable, str(scheduler_script)],
+                            cmd,
                             capture_output=True,
                             text=True,
                             env=env,
@@ -144,16 +157,23 @@ with st.form("model_config"):
         prediction_horizon = st.selectbox(
             "Prediction Horizon",
             options=[3, 6, 12],
-            index=1,
+            index=[3, 6, 12].index(int(runtime_config.get('horizon_months', 6))),
             format_func=lambda x: f"{x} months"
         )
         
-        decision_threshold = st.slider(
-            "Decision Threshold",
+        decision_threshold_override = st.slider(
+            "Decision Threshold Override",
             min_value=0.0,
             max_value=1.0,
-            value=0.5,
-            step=0.05
+            value=float(runtime_config.get('threshold_override')
+                        if runtime_config.get('threshold_override') is not None else 0.5),
+            step=0.05,
+            help="Optional manual override; set to 0.5 and disable below to use model-optimized threshold."
+        )
+
+        use_threshold_override = st.checkbox(
+            "Use threshold override",
+            value=runtime_config.get('threshold_override') is not None
         )
     
     with col2:
@@ -161,21 +181,35 @@ with st.form("model_config"):
             "Maximum Features",
             min_value=10,
             max_value=200,
-            value=50,
+            value=int(runtime_config.get('max_features', 60)),
             step=10
         )
         
         scheduler_interval = st.selectbox(
             "Scheduler Interval",
             options=["daily", "weekly", "monthly"],
-            index=1
+            index=["daily", "weekly", "monthly"].index(runtime_config.get('interval', 'weekly'))
+        )
+
+        train_end_date = st.text_input(
+            "Training End Date (optional, YYYY-MM-DD)",
+            value=runtime_config.get('train_end_date') or "",
+            help="Leave blank to use expanding-window split."
         )
     
     submitted = st.form_submit_button("💾 Save Configuration")
     
     if submitted:
-        st.info("⚠️ Configuration saved. Changes will take effect on next model retraining.")
-        # In a real implementation, save these to a config file
+        saved = save_runtime_config({
+            'interval': scheduler_interval,
+            'horizon_months': prediction_horizon,
+            'train_end_date': train_end_date.strip() or None,
+            'max_features': int(max_features),
+            'threshold_override': float(decision_threshold_override) if use_threshold_override else None,
+        })
+        runtime_config = saved
+        st.success("✅ Configuration saved. Changes will apply on next scheduled or manual refresh.")
+        st.json(saved)
 
 # User Management
 st.markdown("---")

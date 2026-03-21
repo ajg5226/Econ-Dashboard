@@ -1,9 +1,13 @@
 """
-Scheduler configuration
-Defines intervals and settings for automated data refresh
+Scheduler/runtime configuration utilities.
+
+Defines defaults and persistence helpers used by both:
+- scheduler/update_job.py (runtime behavior)
+- app/pages/settings.py (admin configuration UI)
 """
 
-from datetime import datetime
+import json
+from pathlib import Path
 
 # Scheduler interval options
 SCHEDULER_INTERVALS = {
@@ -25,11 +29,15 @@ SCHEDULER_INTERVALS = {
 DEFAULT_CONFIG = {
     'interval': 'weekly',
     'horizon_months': 6,
-    'train_end_date': '2015-12-31',
+    'train_end_date': None,
+    'max_features': 60,
+    'threshold_override': None,
     'timeout_minutes': 30,
     'retry_attempts': 3,
-    'retry_delay_seconds': 60
+    'retry_delay_seconds': 60,
 }
+
+CONFIG_PATH = Path(__file__).parent.parent / "data" / "models" / "runtime_config.json"
 
 def get_cron_expression(interval: str = 'weekly') -> str:
     """
@@ -55,4 +63,62 @@ def get_scheduler_description(interval: str = 'weekly') -> str:
         Description string
     """
     return SCHEDULER_INTERVALS.get(interval, SCHEDULER_INTERVALS['weekly'])['description']
+
+
+def _validate_config(config: dict) -> dict:
+    """Validate and normalize config values against supported ranges."""
+    validated = DEFAULT_CONFIG.copy()
+    validated.update(config or {})
+
+    if validated.get('interval') not in SCHEDULER_INTERVALS:
+        validated['interval'] = DEFAULT_CONFIG['interval']
+
+    try:
+        validated['horizon_months'] = int(validated.get('horizon_months', 6))
+    except (TypeError, ValueError):
+        validated['horizon_months'] = DEFAULT_CONFIG['horizon_months']
+    if validated['horizon_months'] not in (3, 6, 12):
+        validated['horizon_months'] = DEFAULT_CONFIG['horizon_months']
+
+    train_end = validated.get('train_end_date')
+    validated['train_end_date'] = train_end if train_end else None
+
+    try:
+        validated['max_features'] = int(validated.get('max_features', 60))
+    except (TypeError, ValueError):
+        validated['max_features'] = DEFAULT_CONFIG['max_features']
+    validated['max_features'] = max(10, min(200, validated['max_features']))
+
+    th = validated.get('threshold_override')
+    if th in ("", None):
+        validated['threshold_override'] = None
+    else:
+        try:
+            th_val = float(th)
+            validated['threshold_override'] = max(0.0, min(1.0, th_val))
+        except (TypeError, ValueError):
+            validated['threshold_override'] = None
+
+    return validated
+
+
+def load_runtime_config() -> dict:
+    """Load persisted runtime config, merged with sane defaults."""
+    if CONFIG_PATH.exists():
+        try:
+            with open(CONFIG_PATH, 'r') as f:
+                raw = json.load(f)
+            return _validate_config(raw)
+        except Exception:
+            return DEFAULT_CONFIG.copy()
+    return DEFAULT_CONFIG.copy()
+
+
+def save_runtime_config(config: dict) -> dict:
+    """Validate and persist runtime config to disk."""
+    validated = _validate_config(config)
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(CONFIG_PATH, 'w') as f:
+        json.dump(validated, f, indent=2)
+    return validated
 
