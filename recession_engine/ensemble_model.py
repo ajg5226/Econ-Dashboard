@@ -55,93 +55,287 @@ except Exception as e:  # pragma: no cover - environment-specific
     MarkovRegression = None  # type: ignore
     logger.warning("statsmodels MarkovRegression not available: %s", e)
 
+try:
+    import torch
+    import torch.nn as nn
+    HAS_TORCH = True
+    logger.info("PyTorch %s available (MPS: %s)", torch.__version__,
+                torch.backends.mps.is_available() if hasattr(torch.backends, 'mps') else False)
+except ImportError as e:
+    HAS_TORCH = False
+    torch = None  # type: ignore
+    nn = None  # type: ignore
+    logger.warning("PyTorch not available: %s", e)
+
 
 class MarkovSwitchingWrapper:
     """
-    Sklearn-like wrapper for a 2-regime Markov-switching model.
+    Sklearn-like wrapper for a 3-regime Markov-switching model with
+    time-varying transition probabilities (TVTP) and isotonic calibration.
 
-    Instead of predicting from a high-dimensional feature matrix, this model
-    builds a composite signal from a few key macro indicators and infers
-    latent expansion/recession regimes via Hamilton filtering.
+    Literature basis:
+    - Hamilton (1989): Core regime-switching framework
+    - Filardo (1994): TVTP — leading indicators drive transition probabilities
+    - Diebold et al. (1994): TVTP improves recession dating accuracy
+    - Chauvet & Hamilton (2006): Real-time recession probability estimation
+    - FEDS Notes (2026): 3-state model distinguishing expansion,
+      U-shaped (recovery) recession, and L-shaped (hysteresis) recession
 
-    During fit(): fits the MS model on the training-period composite and
-    stores the training composite values.
+    3-state design:
+    - Regime 0 (expansion): highest composite mean, normal growth
+    - Regime 1 (mild contraction): intermediate mean, mild/short recessions
+    - Regime 2 (deep contraction): lowest mean, severe recessions
+    - Recession probability = P(mild) + P(deep)
 
-    During predict_proba(): concatenates the stored training composite with
-    a new composite built from the test features, re-runs the Hamilton filter
-    on the extended series, and returns filtered regime probabilities for the
-    test period only.
+    Key improvements:
+    1. 3 regimes instead of 2 — better calibration for mild vs severe recessions
+    2. TVTP: SAHM indicator and NFCI influence transition probabilities
+    3. Isotonic calibration of combined recession probability
+    4. Fixed-parameter prediction via smooth() (no re-fitting on test data)
     """
 
-    # Indicators and their sign direction: +1 = higher means stronger economy,
-    # -1 = higher means weaker economy (recession signal)
-    KEY_INDICATORS = {
-        'leading_T10Y3M': +1,      # Positive spread = expansion
-        'SAHM_INDICATOR': -1,      # Higher = closer to recession trigger
-        'financial_NFCI': -1,      # Higher = tighter financial conditions (stress)
+    # ── Composite indicators: sign-aligned so higher = stronger economy ──
+    COMPOSITE_INDICATORS = {
+        'leading_T10Y3M': +1,              # Positive spread = expansion
+        'NEAR_TERM_FORWARD_SPREAD': +1,    # Engstrom-Sharpe: short-term rate expectations
+        'SAHM_INDICATOR': -1,              # Higher = closer to recession trigger
+        'financial_NFCI': -1,              # Higher = tighter conditions
+        'EBP_PROXY': -1,                   # Higher = credit stress (Gilchrist-Zakrajsek)
+        'CREDIT_STRESS_INDEX': -1,         # Higher = financial stress
     }
+
+    # ── TVTP covariates: these influence transition probabilities ──
+    # The key insight: yield curve inversion alone shouldn't lock the model
+    # in recession regime if labor market and financial conditions are healthy.
+    TVTP_INDICATORS = {
+        'SAHM_INDICATOR': -1,       # Low SAHM = strong labor market → favor expansion
+        'financial_NFCI': -1,       # Low NFCI = loose conditions → favor expansion
+    }
+
+    N_REGIMES = 3  # expansion, mild contraction, deep contraction
 
     def __init__(self):
         self.result = None
-        self.recession_regime = None
+        self.recession_regimes = []  # indices of contraction regimes (mild + deep)
+        self.expansion_regime = None
         self.training_composite = None
-        self._train_means = {}
-        self._train_stds = {}
+        self.training_tvtp = None
+        self._composite_means = {}
+        self._composite_stds = {}
+        self._tvtp_means = {}
+        self._tvtp_stds = {}
+        self._trained_params = None
         self.fitted = False
+        self._use_tvtp = False
 
-    def fit(self, X_df, y):
-        """Fit on composite of key indicators (X_df must be a DataFrame)."""
-        available = {c: s for c, s in self.KEY_INDICATORS.items() if c in X_df.columns}
+        # Isotonic calibration (fitted during fit, applied during predict)
+        self._calibrator = None
+        self._calibrator_fitted = False
+
+    def _build_composite(self, df, fit_stats=False):
+        """Build sign-aligned composite from available indicators."""
+        available = {c: s for c, s in self.COMPOSITE_INDICATORS.items()
+                     if c in df.columns}
         if len(available) == 0:
-            logger.warning("MarkovSwitching: no key indicators found, skipping fit")
-            self.fitted = False
-            return self
+            return None
 
-        # Standardize each indicator, flip sign so higher = stronger economy,
-        # then average into a composite. This ensures the "recession" regime
-        # always has the lower mean.
         parts = []
         for col, sign in available.items():
-            s = X_df[col]
-            mu, sigma = s.mean(), s.std() + 1e-8
-            self._train_means[col] = mu
-            self._train_stds[col] = sigma
+            s = df[col]
+            if fit_stats:
+                mu, sigma = s.mean(), s.std() + 1e-8
+                self._composite_means[col] = mu
+                self._composite_stds[col] = sigma
+            else:
+                mu = self._composite_means.get(col, s.mean())
+                sigma = self._composite_stds.get(col, s.std() + 1e-8)
             parts.append(sign * (s - mu) / sigma)
-        composite = pd.concat(parts, axis=1).mean(axis=1).dropna()
 
-        if len(composite) < 60:
-            logger.warning("MarkovSwitching: too few observations (%d), skipping", len(composite))
+        composite = pd.concat(parts, axis=1).mean(axis=1)
+        return composite
+
+    def _build_tvtp_covariates(self, df, fit_stats=False):
+        """Build TVTP covariate matrix (standardized, sign-aligned)."""
+        available = {c: s for c, s in self.TVTP_INDICATORS.items()
+                     if c in df.columns}
+        if len(available) < 1:
+            return None
+
+        parts = []
+        for col, sign in available.items():
+            s = df[col]
+            if fit_stats:
+                mu, sigma = s.mean(), s.std() + 1e-8
+                self._tvtp_means[col] = mu
+                self._tvtp_stds[col] = sigma
+            else:
+                mu = self._tvtp_means.get(col, s.mean())
+                sigma = self._tvtp_stds.get(col, s.std() + 1e-8)
+            parts.append(sign * (s - mu) / sigma)
+
+        tvtp_df = pd.concat(parts, axis=1)
+        # Add intercept column (required by statsmodels TVTP)
+        tvtp_df.insert(0, '_const', 1.0)
+        return tvtp_df
+
+    def fit(self, X_df, y):
+        """
+        Fit Markov-switching model with TVTP and isotonic calibration.
+
+        Steps:
+        1. Build composite signal from 6 macro indicators
+        2. Build TVTP covariates from labor market + financial conditions
+        3. Fit Hamilton model with TVTP (fall back to constant if TVTP fails)
+        4. Identify recession regime (lower composite mean)
+        5. Calibrate filtered probabilities via isotonic regression on y
+        """
+        from sklearn.isotonic import IsotonicRegression
+
+        composite = self._build_composite(X_df, fit_stats=True)
+        if composite is None:
+            logger.warning("MarkovSwitching: no composite indicators found, skipping")
             self.fitted = False
             return self
 
-        try:
-            mod = MarkovRegression(
-                composite.values,
-                k_regimes=2,
-                trend='c',
-                switching_variance=True,
-            )
-            self.result = mod.fit(maxiter=300, disp=False)
+        tvtp_df = self._build_tvtp_covariates(X_df, fit_stats=True)
 
-            # Identify the recession regime (lower composite mean = weaker economy)
-            # params is a numpy array; use param_names to find const indices
-            param_names = self.result.model.param_names
-            means = []
-            for i in range(2):
-                idx = param_names.index(f'const[{i}]')
-                means.append(float(self.result.params[idx]))
-            self.recession_regime = int(np.argmin(means))
+        # Align composite and TVTP on shared index (drop NaN rows)
+        if tvtp_df is not None:
+            shared_idx = composite.dropna().index.intersection(tvtp_df.dropna().index)
+        else:
+            shared_idx = composite.dropna().index
+        composite = composite.loc[shared_idx]
+        if tvtp_df is not None:
+            tvtp_df = tvtp_df.loc[shared_idx]
 
-            # Store training composite for later extension
-            self.training_composite = composite.values.copy()
-            self.fitted = True
-            logger.info("MarkovSwitching fitted: recession_regime=%d, means=%s",
-                        self.recession_regime, [f"{m:.3f}" for m in means])
-
-        except Exception as e:
-            logger.warning("MarkovSwitching fit failed: %s", e)
-            self.result = None
+        if len(composite) < 60:
+            logger.warning("MarkovSwitching: too few observations (%d), skipping",
+                           len(composite))
             self.fitted = False
+            return self
+
+        # ── Try 3-regime TVTP model, then 3-regime constant, then 2-regime fallback ──
+        self._use_tvtp = False
+        n_regimes = self.N_REGIMES
+
+        # Attempt 1: 3-regime TVTP
+        if tvtp_df is not None and len(tvtp_df.columns) >= 2:
+            try:
+                mod = MarkovRegression(
+                    composite.values,
+                    k_regimes=n_regimes,
+                    trend='c',
+                    switching_variance=True,
+                    exog_tvtp=tvtp_df.values,
+                )
+                self.result = mod.fit(maxiter=500, disp=False)
+                self._use_tvtp = True
+                logger.info("MarkovSwitching: %d-regime TVTP model fitted "
+                            "(%d covariates)", n_regimes, tvtp_df.shape[1] - 1)
+            except Exception as e:
+                logger.warning("MarkovSwitching: %d-regime TVTP failed (%s)",
+                               n_regimes, e)
+                self.result = None
+
+        # Attempt 2: 3-regime constant transitions
+        if self.result is None:
+            try:
+                mod = MarkovRegression(
+                    composite.values,
+                    k_regimes=n_regimes,
+                    trend='c',
+                    switching_variance=True,
+                )
+                self.result = mod.fit(maxiter=500, disp=False)
+                self._use_tvtp = False
+                logger.info("MarkovSwitching: %d-regime constant model fitted",
+                            n_regimes)
+            except Exception as e:
+                logger.warning("MarkovSwitching: %d-regime constant failed (%s)",
+                               n_regimes, e)
+                self.result = None
+
+        # Attempt 3: 2-regime fallback (simpler, more stable)
+        if self.result is None:
+            n_regimes = 2
+            try:
+                mod = MarkovRegression(
+                    composite.values,
+                    k_regimes=2,
+                    trend='c',
+                    switching_variance=True,
+                )
+                self.result = mod.fit(maxiter=300, disp=False)
+                self._use_tvtp = False
+                logger.info("MarkovSwitching: 2-regime fallback model fitted")
+            except Exception as e:
+                logger.warning("MarkovSwitching fit failed completely: %s", e)
+                self.result = None
+                self.fitted = False
+                return self
+
+        # ── Identify regimes by composite mean ──
+        # Higher composite mean = stronger economy (expansion)
+        param_names = self.result.model.param_names
+        means = []
+        for i in range(n_regimes):
+            idx = param_names.index(f'const[{i}]')
+            means.append(float(self.result.params[idx]))
+
+        # Sort regimes by mean: highest = expansion, lower = contraction
+        sorted_regimes = sorted(range(n_regimes), key=lambda i: means[i], reverse=True)
+        self.expansion_regime = sorted_regimes[0]
+        self.recession_regimes = sorted_regimes[1:]  # all non-expansion regimes
+        self._n_regimes_actual = n_regimes
+
+        # Store trained parameters and data for prediction
+        self._trained_params = self.result.params.copy()
+        self.training_composite = composite.values.copy()
+        if self._use_tvtp:
+            self.training_tvtp = tvtp_df.values.copy()
+
+        # ── Isotonic calibration on training data ──
+        # The raw filtered probabilities are near-binary (0.01 or 0.99).
+        # Isotonic regression learns a monotonic mapping from raw probs
+        # to actual recession frequencies, producing well-calibrated output.
+        # For 3-state model: recession prob = sum of all contraction regime probs
+        filtered = self.result.filtered_marginal_probabilities
+        raw_train_probs = sum(
+            filtered[:, r] for r in self.recession_regimes
+        )
+
+        # Align y with the composite index
+        y_aligned = y.loc[shared_idx].values if hasattr(y, 'loc') else y
+
+        if len(y_aligned) == len(raw_train_probs):
+            try:
+                self._calibrator = IsotonicRegression(
+                    y_min=0.01, y_max=0.99, out_of_bounds='clip'
+                )
+                self._calibrator.fit(raw_train_probs, y_aligned)
+                self._calibrator_fitted = True
+
+                # Log calibration effect
+                cal_probs = self._calibrator.predict(raw_train_probs)
+                logger.info("MarkovSwitching calibration: raw range [%.3f, %.3f] → "
+                            "calibrated range [%.3f, %.3f]",
+                            raw_train_probs.min(), raw_train_probs.max(),
+                            cal_probs.min(), cal_probs.max())
+            except Exception as e:
+                logger.warning("MarkovSwitching calibration failed: %s", e)
+                self._calibrator_fitted = False
+        else:
+            logger.warning("MarkovSwitching: y length mismatch for calibration "
+                           "(%d vs %d)", len(y_aligned), len(raw_train_probs))
+            self._calibrator_fitted = False
+
+        self.fitted = True
+        logger.info("MarkovSwitching fitted: %d regimes, expansion=%d, "
+                     "recession=%s, means=%s, tvtp=%s, calibrated=%s",
+                     n_regimes, self.expansion_regime,
+                     self.recession_regimes,
+                     [f"{m:.3f}" for m in means],
+                     self._use_tvtp, self._calibrator_fitted)
 
         return self
 
@@ -149,46 +343,76 @@ class MarkovSwitchingWrapper:
         """
         Return (n_samples, 2) array of [P(expansion), P(recession)].
 
-        Extends the training composite with test-period data and runs the
-        Hamilton filter on the full series, returning only the test-period
-        filtered probabilities.
+        Uses the trained model's parameters applied to an extended
+        composite (training + test), then extracts test-period filtered
+        probabilities and applies isotonic calibration.
         """
         n = len(X_df)
 
         if not self.fitted or self.result is None:
             return np.column_stack([np.full(n, 0.5), np.full(n, 0.5)])
 
-        available = {c: s for c, s in self.KEY_INDICATORS.items() if c in X_df.columns}
-        if len(available) == 0:
+        # Build test composite using TRAINING statistics
+        test_composite = self._build_composite(X_df, fit_stats=False)
+        if test_composite is None:
             return np.column_stack([np.full(n, 0.5), np.full(n, 0.5)])
+        test_composite = test_composite.fillna(0).values
 
-        # Build test composite using TRAINING means/stds (same scale as fit)
-        parts = []
-        for col, sign in available.items():
-            mu = self._train_means.get(col, X_df[col].mean())
-            sigma = self._train_stds.get(col, X_df[col].std() + 1e-8)
-            parts.append(sign * (X_df[col] - mu) / sigma)
-        test_composite = pd.concat(parts, axis=1).mean(axis=1).fillna(0).values
+        # Build test TVTP covariates using TRAINING statistics
+        test_tvtp = None
+        if self._use_tvtp:
+            test_tvtp_df = self._build_tvtp_covariates(X_df, fit_stats=False)
+            if test_tvtp_df is not None:
+                test_tvtp = test_tvtp_df.fillna(0).values
 
-        # Concatenate training + test composites
+        # Concatenate training + test data
         full_composite = np.concatenate([self.training_composite, test_composite])
+        full_tvtp = None
+        if self._use_tvtp and self.training_tvtp is not None and test_tvtp is not None:
+            full_tvtp = np.concatenate([self.training_tvtp, test_tvtp])
 
         try:
-            # Re-fit on the extended series to get filtered probabilities
-            mod = MarkovRegression(
-                full_composite,
-                k_regimes=2,
-                trend='c',
-                switching_variance=True,
-            )
-            res = mod.fit(maxiter=300, disp=False)
+            # Apply trained parameters to extended series via smooth()
+            # This avoids re-estimating parameters on test data
+            n_regimes = self._n_regimes_actual
+            if self._use_tvtp and full_tvtp is not None:
+                mod = MarkovRegression(
+                    full_composite,
+                    k_regimes=n_regimes,
+                    trend='c',
+                    switching_variance=True,
+                    exog_tvtp=full_tvtp,
+                )
+            else:
+                mod = MarkovRegression(
+                    full_composite,
+                    k_regimes=n_regimes,
+                    trend='c',
+                    switching_variance=True,
+                )
 
-            # Extract filtered probabilities for the test period
-            # filtered_marginal_probabilities shape: (n_obs, n_regimes)
+            # Use smooth() with trained parameters — no re-estimation
+            try:
+                res = mod.smooth(self._trained_params)
+            except Exception:
+                # Fall back to re-fitting if smooth fails
+                res = mod.fit(
+                    maxiter=300, disp=False,
+                    start_params=self._trained_params
+                )
+
+            # Extract filtered probabilities for test period
+            # For 3-state: recession prob = sum of all contraction regime probs
             filtered = res.filtered_marginal_probabilities
-            test_probs = filtered[-n:, self.recession_regime]
+            test_probs = sum(
+                filtered[-n:, r] for r in self.recession_regimes
+            )
 
-            # Clamp to [0.01, 0.99] for numerical safety
+            # Apply isotonic calibration if available
+            if self._calibrator_fitted and self._calibrator is not None:
+                test_probs = self._calibrator.predict(test_probs)
+
+            # Clamp for numerical safety
             test_probs = np.clip(test_probs, 0.01, 0.99)
 
             return np.column_stack([1.0 - test_probs, test_probs])
@@ -198,15 +422,204 @@ class MarkovSwitchingWrapper:
             return np.column_stack([np.full(n, 0.5), np.full(n, 0.5)])
 
 
+class LSTMRecessionModel:
+    """
+    LSTM-based recession prediction model wrapper.
+
+    Literature basis:
+    - Vrontos et al. (2024): LSTM/GRU outperform traditional models for
+      recession forecasting, especially at 6-12 month horizons
+    - SHAP analysis confirms term spread dominates at 6+ month horizons
+
+    Architecture:
+    - 2 LSTM layers (32, 16 units) with dropout
+    - Lookback window of 12 months (captures medium-term trends)
+    - Binary output with sigmoid activation
+    - Class-weighted training for recession imbalance
+    """
+
+    def __init__(self, lookback=12, epochs=50, batch_size=32):
+        self.lookback = lookback
+        self.epochs = epochs
+        self.batch_size = batch_size
+        self.model = None
+        self.scaler = None
+        self.fitted = False
+        self._feature_cols = None
+        self._device = None
+
+    def _get_device(self):
+        """Select best available device: MPS (Apple GPU) > CUDA > CPU."""
+        if self._device is not None:
+            return self._device
+        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            self._device = torch.device('mps')
+        elif torch.cuda.is_available():
+            self._device = torch.device('cuda')
+        else:
+            self._device = torch.device('cpu')
+        return self._device
+
+    def _build_model(self, n_features):
+        """Build 2-layer LSTM in PyTorch."""
+        class _LSTMNet(nn.Module):
+            def __init__(self, input_dim):
+                super().__init__()
+                self.lstm1 = nn.LSTM(input_dim, 32, batch_first=True, dropout=0.2)
+                self.lstm2 = nn.LSTM(32, 16, batch_first=True)
+                self.fc1 = nn.Linear(16, 16)
+                self.dropout = nn.Dropout(0.3)
+                self.fc2 = nn.Linear(16, 1)
+
+            def forward(self, x):
+                out, _ = self.lstm1(x)
+                out, _ = self.lstm2(out)
+                out = out[:, -1, :]          # last time step
+                out = torch.relu(self.fc1(out))
+                out = self.dropout(out)
+                out = torch.sigmoid(self.fc2(out))
+                return out.squeeze(-1)
+
+        return _LSTMNet(n_features).to(self._get_device())
+
+    def _create_sequences(self, X, y=None):
+        """Create lookback sequences for LSTM input."""
+        X_seq = []
+        y_seq = []
+        for i in range(self.lookback, len(X)):
+            X_seq.append(X[i - self.lookback:i])
+            if y is not None:
+                y_seq.append(y[i])
+        X_seq = np.array(X_seq)
+        if y is not None:
+            y_seq = np.array(y_seq)
+            return X_seq, y_seq
+        return X_seq
+
+    def fit(self, X_train, y_train):
+        """Fit LSTM on scaled feature matrix."""
+        if not HAS_TORCH:
+            logger.warning("LSTM: PyTorch not available, skipping")
+            self.fitted = False
+            return self
+
+        from sklearn.preprocessing import StandardScaler
+
+        self.scaler = StandardScaler()
+        X_scaled = self.scaler.fit_transform(X_train)
+
+        X_seq, y_seq = self._create_sequences(X_scaled, y_train.values)
+
+        if len(X_seq) < 60:
+            logger.warning("LSTM: too few sequences (%d), skipping", len(X_seq))
+            self.fitted = False
+            return self
+
+        # Class weights for imbalanced data
+        n_pos = y_seq.sum()
+        n_neg = len(y_seq) - n_pos
+        pos_weight = torch.tensor([n_neg / max(n_pos, 1)], dtype=torch.float32,
+                                   device=self._get_device())
+
+        self.model = self._build_model(X_scaled.shape[1])
+
+        # Convert to tensors
+        device = self._get_device()
+        X_tensor = torch.tensor(X_seq, dtype=torch.float32, device=device)
+        y_tensor = torch.tensor(y_seq, dtype=torch.float32, device=device)
+
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
+        # Per-sample weights: recession samples get higher weight
+        sample_weights = torch.where(y_tensor == 1, pos_weight.item(), 1.0)
+
+        # Training loop with early stopping
+        best_loss = float('inf')
+        patience_counter = 0
+        best_state = None
+
+        self.model.train()
+        for epoch in range(self.epochs):
+            # Mini-batch training
+            indices = torch.randperm(len(X_tensor), device=device)
+            epoch_loss = 0.0
+            n_batches = 0
+
+            for start in range(0, len(X_tensor), self.batch_size):
+                batch_idx = indices[start:start + self.batch_size]
+                X_batch = X_tensor[batch_idx]
+                y_batch = y_tensor[batch_idx]
+                w_batch = sample_weights[batch_idx]
+
+                optimizer.zero_grad()
+                preds = self.model(X_batch)
+                # Weighted BCE loss
+                bce = -(y_batch * torch.log(preds + 1e-7) +
+                        (1 - y_batch) * torch.log(1 - preds + 1e-7))
+                loss = (bce * w_batch).mean()
+                loss.backward()
+                optimizer.step()
+                epoch_loss += loss.item()
+                n_batches += 1
+
+            avg_loss = epoch_loss / max(n_batches, 1)
+
+            # Early stopping
+            if avg_loss < best_loss - 1e-4:
+                best_loss = avg_loss
+                patience_counter = 0
+                best_state = {k: v.clone() for k, v in self.model.state_dict().items()}
+            else:
+                patience_counter += 1
+                if patience_counter >= 5:
+                    break
+
+        # Restore best weights
+        if best_state is not None:
+            self.model.load_state_dict(best_state)
+
+        self.fitted = True
+        logger.info("LSTM fitted: %d sequences, %d features, lookback=%d, device=%s",
+                     len(X_seq), X_scaled.shape[1], self.lookback, device)
+        return self
+
+    def predict_proba(self, X_test):
+        """Return (n_samples, 2) array of [P(expansion), P(recession)]."""
+        n = len(X_test)
+
+        if not self.fitted or self.model is None:
+            return np.column_stack([np.full(n, 0.5), np.full(n, 0.5)])
+
+        X_scaled = self.scaler.transform(X_test)
+        X_seq = self._create_sequences(X_scaled)
+
+        if len(X_seq) == 0:
+            return np.column_stack([np.full(n, 0.5), np.full(n, 0.5)])
+
+        # Predict
+        device = self._get_device()
+        self.model.eval()
+        with torch.no_grad():
+            X_tensor = torch.tensor(X_seq, dtype=torch.float32, device=device)
+            preds = self.model(X_tensor).cpu().numpy()
+        preds = np.clip(preds, 0.01, 0.99)
+
+        # Pad the first `lookback` predictions with 0.5 (no sequence available)
+        n_pad = n - len(preds)
+        if n_pad > 0:
+            preds = np.concatenate([np.full(n_pad, 0.5), preds])
+
+        return np.column_stack([1.0 - preds, preds])
+
+
 class RecessionEnsembleModel:
     """
     Ensemble recession prediction model.
 
     Architecture:
-    - Base models: L1-Probit, Random Forest, XGBoost, Markov-Switching
+    - Base models: L1-Probit, Random Forest, XGBoost, LSTM, Markov-Switching (TVTP)
     - Preprocessing: PCA factor extraction (augments feature set)
-    - Calibration: Isotonic regression on each base model
-    - Ensemble: Dynamic Model Averaging weights (exponential forgetting of CV Brier scores)
+    - Calibration: Isotonic regression on supervised models; built-in isotonic on Markov
+    - Ensemble: Dynamic Model Averaging weights (AUC × inverse Brier, exponential forgetting)
     - Threshold: Optimized via Youden's J on validation set
     """
 
@@ -232,6 +645,9 @@ class RecessionEnsembleModel:
 
         # Markov-switching model (needs DataFrame, not numpy array)
         self.markov_model = MarkovSwitchingWrapper() if HAS_MARKOV else None
+
+        # LSTM model (needs sequences, handles its own scaling)
+        self.lstm_model = LSTMRecessionModel(lookback=12, epochs=50) if HAS_TORCH else None
 
         # Base models with class_weight='balanced' for rare-event handling
         self.models = {
@@ -361,15 +777,29 @@ class RecessionEnsembleModel:
             selected = top_corr_feats[:max_features]
 
         # Ensure key indicators are always included if available
+        # Core must-include: only the highest-signal indicators that are
+        # well-established in the literature. New Tier 1 features compete
+        # for inclusion via the RF importance ranking — they'll be selected
+        # if they add genuine signal.
         must_include = [
+            # Yield curve & monetary (Estrella-Mishkin, Wright, Engstrom-Sharpe)
             'leading_T10Y3M', 'leading_T10Y3M_inverted',
             'leading_T10Y3M_inv_duration', 'monetary_DFF',
-            'monetary_BAA10Y', 'SAHM_INDICATOR', 'SAHM_TRIGGER',
+            'NEAR_TERM_FORWARD_SPREAD', 'NTFS_inverted',
+            'FFR_x_SPREAD', 'FFR_STANCE',
+            # Term-premium-adjusted spread (Ajello et al. 2022) — key false-positive fix
+            'TERM_PREMIUM_ADJ_SPREAD', 'TP_ADJ_SPREAD_inverted',
+            # Credit & financial conditions (Gilchrist-Zakrajsek)
+            'monetary_BAA10Y', 'EBP_PROXY', 'EBP_PROXY_Z',
+            'financial_NFCI', 'CREDIT_STRESS_INDEX',
+            # Labor market triggers (Sahm, SOS)
+            'SAHM_INDICATOR', 'SAHM_TRIGGER',
+            'SOS_INDICATOR', 'SOS_TRIGGER',
+            # At-risk diffusion (Billakanti-Shin)
             'AT_RISK_DIFFUSION', 'AT_RISK_DIFFUSION_WEIGHTED',
-            'CREDIT_STRESS_INDEX', 'FFR_x_SPREAD', 'FFR_STANCE',
-            'financial_NFCI', 'NFCI_Z', 'FINANCIAL_STRESS_COMPOSITE',
-            'NEAR_TERM_FORWARD_SPREAD', 'NTFS_inverted', 'NTFS_momentum',
-            'EBP_PROXY', 'EBP_PROXY_Z', 'EBP_AT_RISK',
+            # Confirming indicators (Grigoli-Sandri, Leamer)
+            'HOUSE_PRICE_DECLINING', 'RECESSION_CONFIRM_2OF3',
+            'RESIDENTIAL_INV_YOY', 'SECTORAL_DIVERGENCE',
         ]
         for col in must_include:
             if col in valid_cols and col not in selected:
@@ -382,7 +812,7 @@ class RecessionEnsembleModel:
     # Training
     # ------------------------------------------------------------------
 
-    def fit(self, train_df, feature_cols=None):
+    def fit(self, train_df, feature_cols=None, max_features=60):
         """
         Fit all models with calibration and ensemble weighting.
 
@@ -400,7 +830,7 @@ class RecessionEnsembleModel:
         logger.info("=" * 80)
 
         if feature_cols is None:
-            feature_cols = self.select_features(train_df, max_features=60)
+            feature_cols = self.select_features(train_df, max_features=max_features)
 
         self.feature_cols = feature_cols
 
@@ -468,13 +898,27 @@ class RecessionEnsembleModel:
             else:
                 logger.warning("  MarkovSwitching failed to fit; excluded from ensemble")
 
+        # ── Step 2c: Fit LSTM model ───────────────────────────────────
+        if self.lstm_model is not None:
+            logger.info("Fitting lstm...")
+            self.lstm_model.fit(X_train, y_train)
+            if self.lstm_model.fitted:
+                lstm_proba = self.lstm_model.predict_proba(X_train.values)[:, 1]
+                lstm_auc = roc_auc_score(y_train, lstm_proba)
+                lstm_brier = brier_score_loss(y_train, lstm_proba)
+                logger.info(f"  Training AUC: {lstm_auc:.4f}, Brier: {lstm_brier:.4f}")
+                all_model_names.append('lstm')
+            else:
+                logger.warning("  LSTM failed to fit; excluded from ensemble")
+
         # ── Step 3: Time-series CV with per-fold Brier tracking ──────
         logger.info("Running time-series cross-validation...")
         tscv = TimeSeriesSplit(n_splits=self.n_cv_splits)
         cv_probas = {name: [] for name in all_model_names}
         cv_actuals = []
-        # Track per-fold Brier scores for DMA
+        # Track per-fold Brier scores AND AUC for DMA composite scoring
         cv_fold_briers = {name: [] for name in all_model_names}
+        cv_fold_aucs = {name: [] for name in all_model_names}
 
         for fold_idx, (train_idx, val_idx) in enumerate(tscv.split(X_train)):
             X_tr, X_val = X_train.iloc[train_idx], X_train.iloc[val_idx]
@@ -504,9 +948,14 @@ class RecessionEnsembleModel:
                     fold_model.fit(X_tr_tree, y_tr)
                     proba = fold_model.predict_proba(X_val_tree)[:, 1]
                 cv_probas[name].extend(proba.tolist())
-                # Per-fold Brier score
+                # Per-fold Brier score and AUC
                 fold_brier = brier_score_loss(fold_val_actuals, proba)
                 cv_fold_briers[name].append(fold_brier)
+                if len(set(fold_val_actuals)) >= 2:
+                    fold_auc = roc_auc_score(fold_val_actuals, proba)
+                else:
+                    fold_auc = 0.5
+                cv_fold_aucs[name].append(fold_auc)
 
             # Markov-switching CV
             if 'markov_switching' in all_model_names:
@@ -518,6 +967,25 @@ class RecessionEnsembleModel:
                 cv_probas['markov_switching'].extend(ms_proba.tolist())
                 fold_brier = brier_score_loss(fold_val_actuals, ms_proba)
                 cv_fold_briers['markov_switching'].append(fold_brier)
+                if len(set(fold_val_actuals)) >= 2:
+                    fold_auc = roc_auc_score(fold_val_actuals, ms_proba)
+                else:
+                    fold_auc = 0.5
+                cv_fold_aucs['markov_switching'].append(fold_auc)
+
+            # LSTM CV
+            if 'lstm' in all_model_names:
+                fold_lstm = LSTMRecessionModel(lookback=12, epochs=30)
+                fold_lstm.fit(X_tr, y_tr)
+                lstm_proba = fold_lstm.predict_proba(X_val.values)[:, 1]
+                cv_probas['lstm'].extend(lstm_proba.tolist())
+                fold_brier = brier_score_loss(fold_val_actuals, lstm_proba)
+                cv_fold_briers['lstm'].append(fold_brier)
+                if len(set(fold_val_actuals)) >= 2:
+                    fold_auc = roc_auc_score(fold_val_actuals, lstm_proba)
+                else:
+                    fold_auc = 0.5
+                cv_fold_aucs['lstm'].append(fold_auc)
 
             cv_actuals.extend(y_val.tolist())
 
@@ -550,8 +1018,10 @@ class RecessionEnsembleModel:
         }
         logger.info(f"Static weights: {', '.join(f'{n}={w:.3f}' for n, w in self.static_weights.items())}")
 
-        # 4b: DMA weights (exponential forgetting of per-fold Brier scores)
-        dma_weights = self._compute_dma_weights(cv_fold_briers, forgetting_factor=0.99)
+        # 4b: DMA weights (exponential forgetting of per-fold composite scores)
+        dma_weights = self._compute_dma_weights(
+            cv_fold_briers, cv_fold_aucs, forgetting_factor=0.99
+        )
         self.ensemble_weights = dma_weights
         logger.info(f"DMA weights: {', '.join(f'{n}={w:.3f}' for n, w in self.ensemble_weights.items())}")
 
@@ -578,10 +1048,16 @@ class RecessionEnsembleModel:
                 logger.warning(f"  ✗ Calibration failed for {name}: {e}. Using uncalibrated.")
                 self.calibrated_models[name] = None
 
-        # Markov-switching is not calibrated via isotonic (regime model, not classifier)
+        # Markov-switching has its own built-in isotonic calibration
         if 'markov_switching' in all_model_names:
             self.calibrated_models['markov_switching'] = None
-            logger.info("  ⊘ markov_switching: skipped isotonic (regime model)")
+            cal_status = "built-in" if (self.markov_model and self.markov_model._calibrator_fitted) else "none"
+            logger.info(f"  ⊘ markov_switching: uses {cal_status} isotonic calibration")
+
+        # LSTM: no CalibratedClassifierCV (not an sklearn estimator)
+        if 'lstm' in all_model_names:
+            self.calibrated_models['lstm'] = None
+            logger.info("  ⊘ lstm: sigmoid output (no additional calibration)")
 
         # ── Step 6: Optimize decision threshold (Youden's J) ────────
         logger.info("Optimizing decision threshold (Youden's J)...")
@@ -594,51 +1070,61 @@ class RecessionEnsembleModel:
         logger.info("MODEL FITTING COMPLETE")
         logger.info("=" * 80)
 
-    def _compute_dma_weights(self, cv_fold_scores, forgetting_factor=0.99):
+    def _compute_dma_weights(self, cv_fold_briers, cv_fold_aucs=None,
+                             forgetting_factor=0.99):
         """
         Compute Dynamic Model Averaging weights using exponential forgetting.
 
-        More recent CV fold performance is weighted more heavily.
-        This allows the ensemble to adapt to structural changes in the economy.
+        Uses a composite score: AUC × (1 / Brier) to reward models that are
+        both discriminative AND well-calibrated. This prevents a model with
+        good calibration but no discrimination (AUC ≈ 0.5) from earning
+        disproportionate weight.
 
-        The Markov-switching model is capped at 5% ensemble weight because:
-        - It's a regime model, not a calibrated probability forecaster
-        - It tends to get stuck in "recession regime" during unusual-but-not-recessionary
-          macro environments (e.g., post-2022 rate hiking cycle)
-        - Its value is as a complementary signal, not a primary probability estimate
+        More recent CV fold performance is weighted more heavily, allowing
+        the ensemble to adapt to structural changes in the economy.
         """
-        n_folds = len(next(iter(cv_fold_scores.values())))
+        n_folds = len(next(iter(cv_fold_briers.values())))
 
-        # Inverse Brier weighting with exponential forgetting
+        # Composite scoring: AUC × inverse Brier with exponential forgetting
         raw_weights = {}
-        for name in cv_fold_scores:
-            fold_briers = cv_fold_scores[name]
-            weighted_brier = 0
+        for name in cv_fold_briers:
+            fold_briers = cv_fold_briers[name]
+            fold_aucs = cv_fold_aucs.get(name, [0.5] * n_folds) if cv_fold_aucs else [0.5] * n_folds
+
+            weighted_score = 0
             total_weight = 0
-            for i, brier in enumerate(fold_briers):
+            for i in range(len(fold_briers)):
                 w = forgetting_factor ** (n_folds - 1 - i)
-                weighted_brier += w * brier
+                brier = fold_briers[i]
+                auc = fold_aucs[i] if i < len(fold_aucs) else 0.5
+
+                # Composite: AUC × inverse Brier
+                # A model at AUC=0.5 (random) gets half the score of AUC=1.0
+                # A model with Brier=0.25 (random) gets 1/26th the score of Brier=0.01
+                fold_score = auc / (brier + 0.01)
+                weighted_score += w * fold_score
                 total_weight += w
-            avg_brier = weighted_brier / total_weight
-            raw_weights[name] = 1.0 / (avg_brier + 0.01)
+
+            avg_score = weighted_score / total_weight
+            raw_weights[name] = avg_score
 
         # Normalize
         total = sum(raw_weights.values())
         weights = {name: w / total for name, w in raw_weights.items()}
 
-        # Cap Markov-switching weight: regime models are useful as a complementary
-        # signal but produce poorly-calibrated probabilities (often stuck at 0% or 99%).
-        # Redistribute excess weight proportionally to supervised models.
-        ms_cap = 0.05
-        if 'markov_switching' in weights and weights['markov_switching'] > ms_cap:
-            excess = weights['markov_switching'] - ms_cap
-            weights['markov_switching'] = ms_cap
-            # Redistribute to supervised models proportionally
-            supervised = {k: v for k, v in weights.items() if k != 'markov_switching'}
-            sup_total = sum(supervised.values())
-            if sup_total > 0:
-                for k in supervised:
-                    weights[k] += excess * (supervised[k] / sup_total)
+        # Soft cap: no single model above 40% to ensure genuine ensemble diversity.
+        # Redistribute excess proportionally to other models.
+        max_weight = 0.40
+        for _ in range(3):  # Iterate to handle cascading redistributions
+            for name in list(weights.keys()):
+                if weights[name] > max_weight:
+                    excess = weights[name] - max_weight
+                    weights[name] = max_weight
+                    others = {k: v for k, v in weights.items() if k != name}
+                    others_total = sum(others.values())
+                    if others_total > 0:
+                        for k in others:
+                            weights[k] += excess * (others[k] / others_total)
 
         # Apply minimum weight floor (2%) and renormalize
         min_weight = 0.02
@@ -674,7 +1160,10 @@ class RecessionEnsembleModel:
         best_j = -1
         best_threshold = 0.5
 
-        for threshold in np.arange(0.10, 0.90, 0.01):
+        # Search range bounded to [0.10, 0.40] — prevents extreme thresholds
+        # that cause backtest instability. Recession base rate is ~12%, so
+        # thresholds above 0.40 are too conservative (miss mild recessions).
+        for threshold in np.arange(0.10, 0.41, 0.01):
             y_pred = (y_proba >= threshold).astype(int)
             tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
 
@@ -728,6 +1217,10 @@ class RecessionEnsembleModel:
         # Markov-switching prediction (uses raw DataFrame, not numpy array)
         if self.markov_model is not None and self.markov_model.fitted:
             predictions['markov_switching'] = self.markov_model.predict_proba(test_df)[:, 1]
+
+        # LSTM prediction (uses unscaled feature matrix)
+        if self.lstm_model is not None and self.lstm_model.fitted:
+            predictions['lstm'] = self.lstm_model.predict_proba(X_test.values)[:, 1]
 
         # DMA-weighted ensemble
         ensemble_proba = np.zeros(len(X_test))
@@ -890,7 +1383,7 @@ class RecessionEnsembleModel:
 
         report.append("")
         report.append("MODEL PREDICTIONS:")
-        for model_name in ['probit', 'random_forest', 'xgboost', 'markov_switching', 'ensemble']:
+        for model_name in ['probit', 'random_forest', 'xgboost', 'lstm', 'markov_switching', 'ensemble']:
             if model_name in latest_probs:
                 prob = latest_probs[model_name]
                 weight = self.ensemble_weights.get(model_name, 'N/A')
@@ -920,21 +1413,26 @@ class RecessionEnsembleModel:
         report.append("=" * 80)
         report.append("METHODOLOGY:")
         report.append("  Models: L1-Probit, Random Forest (300 trees), XGBoost (400 rounds),")
-        report.append("          Markov-Switching Regime Model (2-state Hamilton filter)")
+        report.append("          LSTM (2-layer, 12-month lookback),")
+        report.append("          Markov-Switching (3-state TVTP Hamilton filter, isotonic calibrated)")
         report.append("  Preprocessing: PCA factor extraction (top 5 components augment features)")
         report.append("  Class weighting: Balanced (accounts for ~12% recession base rate)")
         report.append("  Calibration: Isotonic regression via time-series cross-validation")
         report.append("  Ensemble: Dynamic Model Averaging (exponential forgetting, lambda=0.99)")
         report.append("  Threshold: Youden's J statistic (maximizes sensitivity + specificity)")
         report.append(f"  Features: {len(self.feature_cols)} selected from correlation + RF importance")
-        report.append("  Includes: At-risk transforms, Sahm Rule, term spread dynamics,")
-        report.append("            near-term forward spread, excess bond premium proxy,")
+        report.append("  Includes: At-risk transforms, Sahm Rule, SOS indicator,")
+        report.append("            term-premium-adjusted spread, near-term forward spread,")
+        report.append("            excess bond premium proxy, house price confirming indicator,")
+        report.append("            residential investment, consumer durables, sectoral divergence,")
         report.append("            credit stress index, monetary policy stance interaction")
         report.append("")
         report.append("  References:")
         report.append("  - Estrella & Mishkin (1998), Wright (2006), Sahm (2019)")
         report.append("  - Billakanti & Shin (2025), Engstrom & Sharpe (2019)")
         report.append("  - Gilchrist & Zakrajsek (2012), Raftery et al. (2010) [DMA]")
+        report.append("  - Ajello et al. (2022) [term premium], Grigoli & Sandri (2024) [house prices]")
+        report.append("  - Scavette & O'Trakoun (2025) [SOS], Leamer (2024) [res. investment]")
         report.append("=" * 80)
 
         return "\n".join(report)

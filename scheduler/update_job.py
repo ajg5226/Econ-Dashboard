@@ -6,6 +6,8 @@ Can be run via cron, GitHub Actions, or manually
 import os
 import sys
 import logging
+import platform
+import subprocess
 from pathlib import Path
 from datetime import datetime
 import pandas as pd
@@ -29,6 +31,7 @@ if not os.environ.get('FRED_API_KEY'):
 
 from recession_engine.data_acquisition import RecessionDataAcquisition
 from recession_engine.ensemble_model import RecessionEnsembleModel
+from scheduler.scheduler_config import load_runtime_config
 try:
     from app.utils.data_loader import (
         save_predictions, save_indicators, save_executive_report,
@@ -59,19 +62,75 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def run_update_job(horizon_months=6, train_end_date=None):
+def _get_git_sha() -> str:
+    """Best-effort retrieval of current git SHA for provenance."""
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(Path(__file__).parent.parent),
+            text=True
+        ).strip()
+    except Exception:
+        return "unknown"
+
+
+def _build_run_manifest(*, horizon_months, train_end_date, max_features,
+                        threshold_override, model, metrics_df, predictions_df):
+    """Create a concise provenance manifest for each model refresh run."""
+    ensemble_row = metrics_df[metrics_df['Model'] == 'ensemble']
+    ensemble_metrics = {}
+    if not ensemble_row.empty:
+        ensemble_metrics = {
+            'auc': float(ensemble_row['AUC'].iloc[0]),
+            'brier': float(ensemble_row['Brier'].iloc[0]),
+            'logloss': float(ensemble_row['LogLoss'].iloc[0]),
+        }
+
+    latest_known = predictions_df.dropna(subset=['Actual_Recession'])
+    latest_known_date = None
+    if len(latest_known) > 0:
+        latest_known_date = pd.to_datetime(latest_known['Date'].max()).strftime('%Y-%m-%d')
+
+    return {
+        'timestamp_utc': datetime.utcnow().isoformat() + 'Z',
+        'git_sha': _get_git_sha(),
+        'python_version': platform.python_version(),
+        'horizon_months': int(horizon_months),
+        'train_end_date': train_end_date,
+        'max_features': int(max_features),
+        'threshold_override': threshold_override,
+        'decision_threshold_used': float(model.decision_threshold),
+        'selected_features_count': int(len(model.feature_cols)),
+        'ensemble_weights': {k: float(v) for k, v in model.ensemble_weights.items()},
+        'ensemble_metrics': ensemble_metrics,
+        'predictions_rows': int(len(predictions_df)),
+        'latest_prediction_date': pd.to_datetime(predictions_df['Date'].max()).strftime('%Y-%m-%d'),
+        'latest_known_outcome_date': latest_known_date,
+    }
+
+
+def run_update_job(horizon_months=None, train_end_date=None, max_features=None, threshold_override=None):
     """
     Main update job function
 
     Args:
-        horizon_months: Prediction horizon in months
+        horizon_months: Prediction horizon in months (defaults to runtime config)
         train_end_date: Date to split training/test data.
                         If None, uses expanding window (last 20% as test).
-                        Default changed from fixed '2015-12-31' to None.
+        max_features: Maximum selected features for model fitting (defaults to runtime config)
+        threshold_override: Optional manual decision threshold override in [0, 1]
     """
+    runtime_config = load_runtime_config()
+    horizon_months = runtime_config['horizon_months'] if horizon_months is None else horizon_months
+    train_end_date = runtime_config['train_end_date'] if train_end_date is None else train_end_date
+    max_features = runtime_config['max_features'] if max_features is None else max_features
+    threshold_override = runtime_config['threshold_override'] if threshold_override is None else threshold_override
+
     logger.info("=" * 100)
     logger.info("SCHEDULER UPDATE JOB STARTED (v2 — literature-informed)")
     logger.info(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("Config | horizon=%s train_end=%s max_features=%s threshold_override=%s",
+                horizon_months, train_end_date, max_features, threshold_override)
     logger.info("=" * 100)
 
     try:
@@ -158,7 +217,11 @@ def run_update_job(horizon_months=6, train_end_date=None):
         logger.info("STEP 5: MODEL TRAINING")
         logger.info("=" * 100)
 
-        model.fit(train_df)
+        model.fit(train_df, max_features=max_features)
+
+        if threshold_override is not None:
+            model.decision_threshold = float(threshold_override)
+            logger.info("✓ Applied manual threshold override: %.3f", model.decision_threshold)
 
         # Save model artifacts
         ensure_data_dir()
@@ -251,6 +314,7 @@ def run_update_job(horizon_months=6, train_end_date=None):
         target_col = f'RECESSION_FORWARD_{horizon_months}M'
         data_dict = {
             'Date': test_df.index,
+            'Forecast_Horizon': horizon_months,
             'Actual_Recession': test_df[target_col].values,
             'Recession_Current': test_df['RECESSION'].values,
             'Prob_Ensemble': predictions['ensemble'],
@@ -265,6 +329,8 @@ def run_update_job(horizon_months=6, train_end_date=None):
             data_dict['Prob_XGBoost'] = predictions['xgboost']
         if 'markov_switching' in predictions:
             data_dict['Prob_MarkovSwitching'] = predictions['markov_switching']
+        if 'lstm' in predictions:
+            data_dict['Prob_LSTM'] = predictions['lstm']
 
         predictions_df = pd.DataFrame(data_dict)
 
@@ -272,6 +338,7 @@ def run_update_job(horizon_months=6, train_end_date=None):
         if len(nowcast_df) > 0:
             nowcast_dict = {
                 'Date': nowcast_df.index,
+                'Forecast_Horizon': horizon_months,
                 'Actual_Recession': np.nan,  # Forward target unknown for nowcast
                 'Recession_Current': nowcast_df['RECESSION'].values,
                 'Prob_Ensemble': nowcast_preds['ensemble'],
@@ -286,6 +353,8 @@ def run_update_job(horizon_months=6, train_end_date=None):
                 nowcast_dict['Prob_XGBoost'] = nowcast_preds['xgboost']
             if 'markov_switching' in nowcast_preds:
                 nowcast_dict['Prob_MarkovSwitching'] = nowcast_preds['markov_switching']
+            if 'lstm' in nowcast_preds:
+                nowcast_dict['Prob_LSTM'] = nowcast_preds['lstm']
 
             nowcast_pred_df = pd.DataFrame(nowcast_dict)
             predictions_df = pd.concat([predictions_df, nowcast_pred_df], ignore_index=True)
@@ -303,6 +372,20 @@ def run_update_job(horizon_months=6, train_end_date=None):
                     logger.info(f"✓ Added reference series: {col_name}")
 
         save_predictions(predictions_df, test_df)
+
+        # Save run manifest / provenance
+        run_manifest = _build_run_manifest(
+            horizon_months=horizon_months,
+            train_end_date=train_end_date,
+            max_features=max_features,
+            threshold_override=threshold_override,
+            model=model,
+            metrics_df=metrics_df,
+            predictions_df=predictions_df,
+        )
+        with open(models_dir / "run_manifest.json", "w") as f:
+            json.dump(run_manifest, f, indent=2)
+        logger.info("✓ Saved run manifest")
 
         # Save CI metadata
         with open(models_dir / "confidence_intervals.json", 'w') as f:
@@ -346,6 +429,17 @@ def run_update_job(horizon_months=6, train_end_date=None):
             # Save summary
             with open(models_dir / "backtest_summary.txt", 'w') as f:
                 f.write(summary)
+
+            # Optional ALFRED vintage backtest (non-fatal, requires network/method support)
+            alfred_results = backtester.run_alfred_vintage_backtest(df_raw)
+            if alfred_results is not None and not alfred_results.empty:
+                alfred_path = models_dir / "alfred_vintage_results.csv"
+                alfred_results.to_csv(alfred_path, index=False)
+                logger.info("✓ Saved ALFRED vintage results to %s", alfred_path)
+                alfred_summary = backtester.summarize_alfred_results(alfred_results)
+                with open(models_dir / "alfred_vintage_summary.txt", "w") as f:
+                    f.write(alfred_summary)
+                logger.info("✓ Saved ALFRED vintage summary")
 
         except Exception as e:
             logger.warning("Backtest failed (non-fatal): %s", e)
@@ -437,15 +531,20 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Run recession prediction update job")
-    parser.add_argument("--horizon", type=int, default=6, help="Prediction horizon in months")
+    parser.add_argument("--horizon", type=int, default=None, help="Prediction horizon in months")
     parser.add_argument("--train-end", type=str, default=None,
                         help="Training data end date (YYYY-MM-DD). If not set, uses expanding window.")
+    parser.add_argument("--max-features", type=int, default=None, help="Maximum selected features")
+    parser.add_argument("--threshold-override", type=float, default=None,
+                        help="Optional manual decision threshold override in [0,1]")
 
     args = parser.parse_args()
 
     success = run_update_job(
         horizon_months=args.horizon,
-        train_end_date=args.train_end
+        train_end_date=args.train_end,
+        max_features=args.max_features,
+        threshold_override=args.threshold_override,
     )
 
     sys.exit(0 if success else 1)

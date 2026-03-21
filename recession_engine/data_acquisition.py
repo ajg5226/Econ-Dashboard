@@ -9,6 +9,10 @@ Implements literature-backed indicator selection and feature engineering:
 - Sahm (2019): Sahm Rule unemployment trigger
 - Billakanti & Shin (2025, Philly Fed): At-risk transformation
 - Engstrom & Sharpe (2019): Near-term forward spread dynamics
+- Ajello et al. (2022): Term-premium-adjusted yield spread
+- Grigoli & Sandri (2024): House prices as yield-curve confirming indicator
+- Scavette & O'Trakoun (2025): SOS recession indicator (insured unemployment)
+- Leamer (2024): Residential investment and consumer durables as precursors
 """
 
 import pandas as pd
@@ -56,6 +60,11 @@ class RecessionDataAcquisition:
                 'UMCSENT': 'Consumer Sentiment',
                 'NEWORDER': 'New Orders Consumer Goods',
                 'DGORDER': 'New Orders Durable Goods',
+                # Leamer (2024): residential investment + consumer durables
+                'PRFI': 'Private Residential Fixed Investment',
+                'PCDG': 'Personal Consumption Expenditures: Durable Goods',
+                # Sectoral divergence: nonresidential fixed investment
+                'PNFI': 'Private Nonresidential Fixed Investment',
             },
             'coincident': {
                 'PAYEMS': 'Nonfarm Payrolls',
@@ -64,6 +73,8 @@ class RecessionDataAcquisition:
                 'PI': 'Personal Income',
                 'RSXFS': 'Retail Sales',
                 'CMRMTSPL': 'Real Manufacturing Sales',
+                # Scavette & O'Trakoun (2025): insured unemployment rate
+                'IURSA': 'Insured Unemployment Rate (SA)',
             },
             'lagging': {
                 'UEMPMEAN': 'Avg Unemployment Duration',
@@ -82,6 +93,13 @@ class RecessionDataAcquisition:
                 'ANFCI': 'Chicago Fed Adjusted NFCI',
                 'BAMLH0A0HYM2': 'ICE BofA US High Yield OAS',
                 'BAMLC0A0CM': 'ICE BofA US Corporate Master OAS',
+            },
+            # Housing & term structure (Grigoli-Sandri 2024, Ajello et al. 2022)
+            'housing': {
+                'CSUSHPINSA': 'S&P/Case-Shiller US National Home Price Index (NSA)',
+            },
+            'term_structure': {
+                'THREEFYTP10': 'Kim-Wright 10-Year Term Premium',
             },
             # Peer/reference models (for benchmarking, not used as features)
             'reference': {
@@ -140,6 +158,18 @@ class RecessionDataAcquisition:
         df.index = pd.to_datetime(df.index)
         df = df.sort_index()
         df = df.resample('ME').last()
+
+        # Interpolate quarterly BEA series to monthly (linear interpolation)
+        # These series (PRFI, PCDG, PNFI) are quarterly and would otherwise
+        # have 2/3 NaN after monthly resampling, producing garbage pct_change.
+        quarterly_series = ['leading_PRFI', 'leading_PCDG', 'leading_PNFI']
+        for col in quarterly_series:
+            if col in df.columns:
+                non_null = df[col].notna().sum()
+                if non_null > 0 and non_null < len(df) * 0.5:
+                    df[col] = df[col].interpolate(method='linear')
+                    logger.info(f"  Interpolated {col} from quarterly to monthly "
+                                f"({non_null} → {df[col].notna().sum()} obs)")
 
         # Basic data quality summary
         missing_frac = df.isna().mean().sort_values(ascending=False)
@@ -310,6 +340,143 @@ class RecessionDataAcquisition:
             ffr_ma36 = df[ffr_col].rolling(36, min_periods=12).mean()
             df_eng['FFR_STANCE'] = df[ffr_col] - ffr_ma36
 
+        # ── Tier 7: Term-premium-adjusted yield spread (Ajello et al. 2022) ──
+        # The raw T10Y3M spread overstates recession risk when QE/QT distorts
+        # term premia. Subtracting the Kim-Wright term premium isolates the
+        # policy-expectations component that actually predicts recessions.
+        tp_col = 'term_structure_THREEFYTP10'
+        spread_col_t10 = 'leading_T10Y3M'
+        if tp_col in df.columns and spread_col_t10 in df.columns:
+            adj_spread = df[spread_col_t10] - df[tp_col]
+            df_eng['TERM_PREMIUM_ADJ_SPREAD'] = adj_spread
+            df_eng['TP_ADJ_SPREAD_inverted'] = (adj_spread < 0).astype(float)
+            df_eng['TP_ADJ_SPREAD_momentum'] = adj_spread.diff(3)
+
+            # Duration of inversion (term-premium-adjusted)
+            tp_inv = (adj_spread < 0).astype(int)
+            tp_groups = (tp_inv != tp_inv.shift()).cumsum()
+            df_eng['TP_ADJ_SPREAD_inv_duration'] = tp_inv.groupby(tp_groups).cumsum()
+
+            # vs 2-year rolling mean
+            tp_ma24 = adj_spread.rolling(24, min_periods=12).mean()
+            df_eng['TP_ADJ_SPREAD_vs_ma24'] = adj_spread - tp_ma24
+
+            logger.info("  ✓ Term-premium-adjusted spread (Ajello et al. 2022)")
+
+        # ── Tier 8: House prices as confirming indicator (Grigoli & Sandri 2024) ──
+        # Yield curve inversion alone doesn't predict recessions. Recessions require
+        # the combination of: (1) curve inversion, (2) falling house prices, AND
+        # (3) rising excess bond premium. House price declines confirm recession risk.
+        hp_col = 'housing_CSUSHPINSA'
+        if hp_col in df.columns:
+            hp = df[hp_col]
+            # YoY house price growth
+            df_eng['HOUSE_PRICE_YOY'] = hp.pct_change(12)
+            # 3-month momentum
+            df_eng['HOUSE_PRICE_MOM3'] = hp.pct_change(3)
+            # Declining flag (negative YoY)
+            df_eng['HOUSE_PRICE_DECLINING'] = (hp.pct_change(12) < 0).astype(float)
+            # Grigoli-Sandri triple condition: curve inverted + house prices falling + EBP elevated
+            if spread_col_t10 in df.columns:
+                curve_inv = (df[spread_col_t10] < 0).astype(float)
+                hp_declining = df_eng['HOUSE_PRICE_DECLINING']
+                ebp_elevated = df_eng.get('EBP_AT_RISK', pd.Series(0, index=df.index))
+                # All three must be true simultaneously
+                df_eng['GRIGOLI_SANDRI_TRIPLE'] = (
+                    curve_inv * hp_declining * ebp_elevated
+                )
+                # Softer version: 2 of 3 conditions met
+                condition_sum = curve_inv + hp_declining + ebp_elevated
+                df_eng['RECESSION_CONFIRM_2OF3'] = (condition_sum >= 2).astype(float)
+
+            logger.info("  ✓ House price confirming indicator (Grigoli & Sandri 2024)")
+
+        # ── Tier 9: SOS recession indicator (Scavette & O'Trakoun 2025) ──
+        # Uses insured unemployment rate instead of survey-based UNRATE.
+        # Zero false positives vs Sahm's 2 (including 2024 false trigger).
+        # The threshold is 0.20pp rise in the moving average above its low.
+        iur_col = 'coincident_IURSA'
+        if iur_col in df.columns:
+            iur = df[iur_col]
+            # Monthly approximation of the SOS indicator:
+            # 6-month moving average minus 12-month low
+            iur_ma6 = iur.rolling(6, min_periods=3).mean()
+            iur_low12 = iur_ma6.rolling(12, min_periods=6).min()
+            df_eng['SOS_INDICATOR'] = iur_ma6 - iur_low12
+            df_eng['SOS_TRIGGER'] = (df_eng['SOS_INDICATOR'] >= 0.20).astype(float)
+            # Continuous signal strength
+            df_eng['SOS_MOMENTUM'] = df_eng['SOS_INDICATOR'].diff(3)
+
+            logger.info("  ✓ SOS recession indicator (Scavette & O'Trakoun 2025)")
+
+        # ── Tier 10: Residential investment + consumer durables (Leamer 2024) ──
+        # Among 20 variables, Leamer found these two GDP components are the
+        # most reliable pre-recession signals after the yield curve.
+        prfi_col = 'leading_PRFI'
+        pcdg_col = 'leading_PCDG'
+        if prfi_col in df.columns:
+            prfi = df[prfi_col]
+            df_eng['RESIDENTIAL_INV_YOY'] = prfi.pct_change(12)
+            df_eng['RESIDENTIAL_INV_MOM3'] = prfi.pct_change(3)
+            # At-risk: residential investment declining YoY
+            df_eng['RESIDENTIAL_INV_DECLINING'] = (prfi.pct_change(12) < 0).astype(float)
+            # Expanding z-score of YoY growth
+            ri_yoy = prfi.pct_change(12)
+            ri_mean = ri_yoy.expanding(min_periods=24).mean()
+            ri_std = ri_yoy.expanding(min_periods=24).std().where(
+                lambda x: x > 1e-8, np.nan
+            )
+            df_eng['RESIDENTIAL_INV_Z'] = (ri_yoy - ri_mean) / ri_std
+
+            logger.info("  ✓ Residential investment features (Leamer 2024)")
+
+        if pcdg_col in df.columns:
+            pcdg = df[pcdg_col]
+            df_eng['DURABLES_YOY'] = pcdg.pct_change(12)
+            df_eng['DURABLES_MOM3'] = pcdg.pct_change(3)
+            # At-risk: durables declining YoY
+            df_eng['DURABLES_DECLINING'] = (pcdg.pct_change(12) < 0).astype(float)
+            # Expanding z-score
+            dur_yoy = pcdg.pct_change(12)
+            dur_mean = dur_yoy.expanding(min_periods=24).mean()
+            dur_std = dur_yoy.expanding(min_periods=24).std().where(
+                lambda x: x > 1e-8, np.nan
+            )
+            df_eng['DURABLES_Z'] = (dur_yoy - dur_mean) / dur_std
+
+            logger.info("  ✓ Consumer durables features (Leamer 2024)")
+
+        # ── Tier 11: Sectoral divergence — capex vs employment ──────────
+        # When nonresidential fixed investment (AI/datacenter capex) is booming
+        # but employment is stalling, a capex bust creates acute recession risk.
+        pnfi_col = 'leading_PNFI'
+        payems_col = 'coincident_PAYEMS'
+        if pnfi_col in df.columns and payems_col in df.columns:
+            pnfi_yoy = df[pnfi_col].pct_change(12)
+            payems_yoy = df[payems_col].pct_change(12)
+            # Sectoral divergence: capex growth minus employment growth
+            df_eng['SECTORAL_DIVERGENCE'] = pnfi_yoy - payems_yoy
+            # Expanding z-score of the divergence
+            div = df_eng['SECTORAL_DIVERGENCE']
+            div_mean = div.expanding(min_periods=24).mean()
+            div_std = div.expanding(min_periods=24).std().where(
+                lambda x: x > 1e-8, np.nan
+            )
+            df_eng['SECTORAL_DIVERGENCE_Z'] = (div - div_mean) / div_std
+            # Flag: capex booming (>5% YoY) but employment weak (<1% YoY)
+            df_eng['K_SHAPE_FLAG'] = (
+                (pnfi_yoy > 0.05) & (payems_yoy < 0.01)
+            ).astype(float)
+
+            # Also compute Leamer's residential vs nonresidential ratio
+            if prfi_col in df.columns:
+                prfi_yoy = df[prfi_col].pct_change(12)
+                # When residential is falling but nonresidential is rising,
+                # rate-sensitive sectors are weakening first
+                df_eng['RES_VS_NONRES_SPREAD'] = prfi_yoy - pnfi_yoy
+
+            logger.info("  ✓ Sectoral divergence features (capex vs employment)")
+
         # ── Clean up ─────────────────────────────────────────────────
         # Replace inf values from pct_change (division by zero when indicators cross zero)
         df_eng = df_eng.replace([np.inf, -np.inf], np.nan)
@@ -336,6 +503,7 @@ class RecessionDataAcquisition:
             'lagging_ISRATIO', 'monetary_BAA10Y', 'monetary_TEDRATE',
             'financial_NFCI', 'financial_ANFCI',
             'financial_BAMLH0A0HYM2', 'financial_BAMLC0A0CM',
+            'coincident_IURSA',  # Insured unemployment rate (SOS indicator)
         }
 
         at_risk = pd.DataFrame(index=df.index)

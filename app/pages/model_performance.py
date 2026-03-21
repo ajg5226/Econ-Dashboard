@@ -124,6 +124,26 @@ if ci_file.exists():
     except Exception:
         pass
 
+# Load run manifest / provenance metadata
+run_manifest = {}
+manifest_file = DATA_DIR / "run_manifest.json"
+if manifest_file.exists():
+    try:
+        with open(manifest_file) as f:
+            run_manifest = json.load(f)
+    except Exception:
+        pass
+
+# Load ALFRED vintage summary (if available)
+alfred_summary = ""
+alfred_summary_file = DATA_DIR / "alfred_vintage_summary.txt"
+if alfred_summary_file.exists():
+    try:
+        with open(alfred_summary_file) as f:
+            alfred_summary = f.read()
+    except Exception:
+        pass
+
 # ── Decision Threshold Info ───────────────────────────────────────────────────
 threshold = threshold_info.get('decision_threshold', 0.5)
 
@@ -137,6 +157,21 @@ with col2:
 with col3:
     n_models = len(ensemble_weights) if ensemble_weights else 'N/A'
     st.metric("Ensemble Models", n_models)
+
+if run_manifest:
+    st.markdown("---")
+    st.markdown("### Run Provenance")
+    p1, p2, p3, p4 = st.columns(4)
+    with p1:
+        st.metric("Horizon", f"{run_manifest.get('horizon_months', 'N/A')}M")
+    with p2:
+        st.metric("Max Features", run_manifest.get('max_features', 'N/A'))
+    with p3:
+        st.metric("Selected Features", run_manifest.get('selected_features_count', 'N/A'))
+    with p4:
+        ts = run_manifest.get('timestamp_utc', '')
+        st.metric("Run Timestamp", ts[:19] if ts else 'N/A')
+    st.caption(f"Git SHA: `{run_manifest.get('git_sha', 'unknown')}`")
 
 # ── Ensemble Weights ──────────────────────────────────────────────────────────
 if ensemble_weights:
@@ -438,6 +473,11 @@ if 'Actual_Recession' in predictions_df.columns:
                            f"Lead time: {gfc.get('Lead_Months', 'N/A'):.0f} months before recession.")
             else:
                 st.warning(f"**GFC Detection:** Peak probability {peak:.1%} — did NOT cross threshold.")
+
+    if alfred_summary:
+        st.markdown("---")
+        st.markdown("### ALFRED Vintage Evaluation")
+        st.info(alfred_summary)
 
     # ── Methodology ─────────────────────────────────────────────────────────
     st.markdown("---")

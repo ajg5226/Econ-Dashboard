@@ -2,7 +2,7 @@
 
 ## ✅ What Just Happened
 
-Your API key: `952156c1639791916a788bf1a903d3b9` ✓
+Your API key: `<REDACTED_ROTATE_IMMEDIATELY>` ✓
 
 I've tested it and it's **100% valid**! The key works perfectly.
 
@@ -40,7 +40,7 @@ cd /path/to/recession_engine
 pip install -r requirements.txt
 
 # Set your API key
-export FRED_API_KEY='952156c1639791916a788bf1a903d3b9'
+export FRED_API_KEY='your_fred_api_key_here'
 
 # Run the complete system with REAL FRED data!
 python run_recession_engine.py
@@ -203,7 +203,7 @@ pip install fredapi pandas numpy scikit-learn xgboost matplotlib seaborn
 
 ### "FRED API key not found"
 ```bash
-export FRED_API_KEY='952156c1639791916a788bf1a903d3b9'
+export FRED_API_KEY='your_fred_api_key_here'
 # Or run: source config.env
 ```
 
@@ -260,6 +260,6 @@ You have a **world-class recession prediction system** that:
 ---
 
 *Built by: Senior Economist who delivered under pressure*  
-*Your API Key: 952156c1639791916a788bf1a903d3b9*  
+*Your API Key: <REDACTED_ROTATE_IMMEDIATELY>*  
 *Status: Ready for production deployment*  
 *Next Step: Download and run on your computer*

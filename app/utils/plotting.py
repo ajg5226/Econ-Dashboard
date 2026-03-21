@@ -108,12 +108,14 @@ def plot_recession_probability(
         'probit': 'blue',
         'random_forest': 'green',
         'xgboost': 'orange',
+        'lstm': 'brown',
         'markov_switching': 'purple',
     }
     model_display_names = {
         'probit': 'Probit',
         'random_forest': 'Random Forest',
         'xgboost': 'XGBoost',
+        'lstm': 'LSTM',
         'markov_switching': 'Markov Switching',
     }
 

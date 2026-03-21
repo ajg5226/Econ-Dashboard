@@ -74,7 +74,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: '3.11'
       
       - name: Install dependencies
         run: |
@@ -216,7 +216,7 @@ docker-compose up -d
 
 2. **Initialize**
    ```bash
-   eb init -p python-3.9 recession-web-app
+   eb init -p python-3.11 recession-web-app
    ```
 
 3. **Create environment**
@@ -363,7 +363,7 @@ print(secrets.token_hex(32))
 ### Import errors
 
 - Install dependencies: `pip install -r requirements.txt`
-- Check Python version: `python --version` (should be 3.9+)
+- Check Python version: `python --version` (should be 3.11+)
 - Verify all files are in correct directories
 
 ## Monitoring
