@@ -2,9 +2,9 @@ leading_PCDG_YoY
 coincident_IURSA_3M
 leading_ICSA_6M
 DURABLES_YOY
-leading_PNFI_MoM
 coincident_UNRATE_YoY
 coincident_IURSA_YoY
+leading_PNFI_MoM
 coincident_IURSA_6M
 RESIDENTIAL_INV_MOM3
 leading_USSLIND_MA6
@@ -22,8 +22,8 @@ leading_PERMIT_6M
 coincident_INDPRO_3M
 financial_ANFCI_MA6
 leading_PRFI_6M
-leading_PNFI_3M
 coincident_CMRMTSPL_3M
+leading_PNFI_3M
 coincident_PAYEMS_6M
 RESIDENTIAL_INV_YOY
 leading_PCDG_6M
@@ -37,8 +37,8 @@ financial_ANFCI_MA3
 EBP_AT_RISK
 SOS_MOMENTUM
 lagging_UEMPMEAN
-coincident_INDPRO_YoY
 leading_T10Y3M_MA6
+coincident_INDPRO_YoY
 coincident_PAYEMS_MoM
 leading_PCDG_3M
 leading_HOUST_YoY

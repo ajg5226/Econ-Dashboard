@@ -1,5 +1,5 @@
 {
-  "decision_threshold": 0.32,
+  "decision_threshold": 0.35,
   "method": "Youden's J statistic",
-  "timestamp": "2026-03-20T10:54:50.226829"
+  "timestamp": "2026-03-22T04:52:57.040547"
 }

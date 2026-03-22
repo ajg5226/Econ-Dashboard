@@ -1,28 +1,29 @@
 {
-  "timestamp": "2026-03-20T10:56:22.777589",
+  "timestamp": "2026-03-22T05:03:12.399895",
   "checks": {
     "prediction_stability": {
       "status": "OK",
       "details": {
-        "current_6m_vol": 0.0159,
-        "historical_mean_vol": 0.0474,
-        "historical_max_vol": 0.2751,
-        "last_mom_change": 0.0283
+        "current_6m_vol": 0.0129,
+        "historical_mean_vol": 0.0425,
+        "historical_max_vol": 0.2536,
+        "last_mom_change": 0.0169
       }
     },
     "model_disagreement": {
-      "status": "OK",
+      "status": "WARNING",
       "details": {
-        "current_spread": 0.115,
-        "current_std": 0.0539,
+        "current_spread": 0.431,
+        "current_std": 0.1665,
         "model_predictions": {
           "Probit": 0.24,
-          "RandomForest": 0.1379,
-          "XGBoost": 0.2,
-          "MarkovSwitching": 0.125
+          "RandomForest": 0.1247,
+          "XGBoost": 0.199,
+          "MarkovSwitching": 0.069,
+          "LSTM": 0.5
         },
-        "mean_historical_spread": 0.2562,
-        "p95_historical_spread": 0.6558
+        "mean_historical_spread": 0.3469,
+        "p95_historical_spread": 0.6809
       }
     },
     "feature_drift": {
@@ -45,9 +46,9 @@
       "status": "WARNING",
       "details": {
         "window_months": 24,
-        "mean_predicted": 0.2023,
+        "mean_predicted": 0.2298,
         "observed_rate": 0.0,
-        "calibration_gap": 0.2023,
+        "calibration_gap": 0.2298,
         "observed_months": 18
       }
     },
@@ -55,11 +56,16 @@
       "status": "OK",
       "details": {
         "latest_date": "2026-03-31",
-        "days_old": -11
+        "days_old": -9
       }
     }
   },
   "alerts": [
+    {
+      "level": "WARNING",
+      "check": "model_disagreement",
+      "message": "High model disagreement: spread=43.1%. Models: Probit=24.0%, RandomForest=12.5%, XGBoost=19.9%, MarkovSwitching=6.9%, LSTM=50.0%"
+    },
     {
       "level": "WARNING",
       "check": "feature_drift",
@@ -68,9 +74,9 @@
     {
       "level": "INFO",
       "check": "calibration",
-      "message": "Calibration gap: predicted mean=20.2%, observed rate=0.0% over last 24 months"
+      "message": "Calibration gap: predicted mean=23.0%, observed rate=0.0% over last 24 months"
     }
   ],
-  "alert_count": 2,
+  "alert_count": 3,
   "status": "WARNING"
 }

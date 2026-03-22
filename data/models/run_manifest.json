@@ -1,0 +1,26 @@
+{
+  "timestamp_utc": "2026-03-22T04:52:57.803288Z",
+  "git_sha": "31e9d7d2928b98329d068a5d3039c380db6284f5",
+  "python_version": "3.11.15",
+  "horizon_months": 6,
+  "train_end_date": null,
+  "max_features": 60,
+  "threshold_override": null,
+  "decision_threshold_used": 0.35,
+  "selected_features_count": 78,
+  "ensemble_weights": {
+    "probit": 0.3518631814024381,
+    "random_forest": 0.19999691740048953,
+    "xgboost": 0.2488743385899898,
+    "markov_switching": 0.10881459037872881,
+    "lstm": 0.09045097222835376
+  },
+  "ensemble_metrics": {
+    "auc": 0.6214848143982002,
+    "brier": 0.06526829478101234,
+    "logloss": 0.25558537079710514
+  },
+  "predictions_rows": 140,
+  "latest_prediction_date": "2026-03-31",
+  "latest_known_outcome_date": "2025-09-30"
+}
