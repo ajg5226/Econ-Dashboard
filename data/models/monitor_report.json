@@ -1,37 +1,36 @@
 {
-  "timestamp": "2026-03-22T05:03:12.399895",
+  "timestamp": "2026-03-23T15:53:54.489613",
   "checks": {
     "prediction_stability": {
       "status": "OK",
       "details": {
-        "current_6m_vol": 0.0129,
-        "historical_mean_vol": 0.0425,
-        "historical_max_vol": 0.2536,
-        "last_mom_change": 0.0169
+        "current_6m_vol": 0.085,
+        "historical_mean_vol": 0.0508,
+        "historical_max_vol": 0.299,
+        "last_mom_change": 0.0274
       }
     },
     "model_disagreement": {
-      "status": "WARNING",
+      "status": "OK",
       "details": {
-        "current_spread": 0.431,
-        "current_std": 0.1665,
+        "current_spread": 0.1803,
+        "current_std": 0.075,
         "model_predictions": {
-          "Probit": 0.24,
-          "RandomForest": 0.1247,
-          "XGBoost": 0.199,
-          "MarkovSwitching": 0.069,
-          "LSTM": 0.5
+          "Probit": 0.2492,
+          "RandomForest": 0.1333,
+          "XGBoost": 0.1667,
+          "MarkovSwitching": 0.069
         },
-        "mean_historical_spread": 0.3469,
-        "p95_historical_spread": 0.6809
+        "mean_historical_spread": 0.0954,
+        "p95_historical_spread": 0.2881
       }
     },
     "feature_drift": {
       "status": "WARNING",
       "details": {
-        "features_checked": 75,
-        "features_drifted": 62,
-        "mean_psi": 5.3366,
+        "features_checked": 49,
+        "features_drifted": 38,
+        "mean_psi": 5.2084,
         "max_psi": 13.5944,
         "top_drifted": {
           "coincident_IURSA_6M": 13.594,
@@ -46,9 +45,9 @@
       "status": "WARNING",
       "details": {
         "window_months": 24,
-        "mean_predicted": 0.2298,
+        "mean_predicted": 0.2545,
         "observed_rate": 0.0,
-        "calibration_gap": 0.2298,
+        "calibration_gap": 0.2545,
         "observed_months": 18
       }
     },
@@ -56,27 +55,22 @@
       "status": "OK",
       "details": {
         "latest_date": "2026-03-31",
-        "days_old": -9
+        "days_old": -8
       }
     }
   },
   "alerts": [
     {
       "level": "WARNING",
-      "check": "model_disagreement",
-      "message": "High model disagreement: spread=43.1%. Models: Probit=24.0%, RandomForest=12.5%, XGBoost=19.9%, MarkovSwitching=6.9%, LSTM=50.0%"
-    },
-    {
-      "level": "WARNING",
       "check": "feature_drift",
-      "message": "62 features show significant drift (PSI>0.2). Top: coincident_IURSA_6M=13.59, leading_PRFI_MoM=10.55, leading_PRFI_6M=10.03"
+      "message": "38 features show significant drift (PSI>0.2). Top: coincident_IURSA_6M=13.59, leading_PRFI_MoM=10.55, leading_PRFI_6M=10.03"
     },
     {
       "level": "INFO",
       "check": "calibration",
-      "message": "Calibration gap: predicted mean=23.0%, observed rate=0.0% over last 24 months"
+      "message": "Calibration gap: predicted mean=25.5%, observed rate=0.0% over last 24 months"
     }
   ],
-  "alert_count": 3,
+  "alert_count": 2,
   "status": "WARNING"
 }

@@ -30,7 +30,7 @@ DEFAULT_CONFIG = {
     'interval': 'weekly',
     'horizon_months': 6,
     'train_end_date': None,
-    'max_features': 60,
+    'max_features': 50,
     'threshold_override': None,
     'timeout_minutes': 30,
     'retry_attempts': 3,
@@ -84,7 +84,7 @@ def _validate_config(config: dict) -> dict:
     validated['train_end_date'] = train_end if train_end else None
 
     try:
-        validated['max_features'] = int(validated.get('max_features', 60))
+        validated['max_features'] = int(validated.get('max_features', 50))
     except (TypeError, ValueError):
         validated['max_features'] = DEFAULT_CONFIG['max_features']
     validated['max_features'] = max(10, min(200, validated['max_features']))

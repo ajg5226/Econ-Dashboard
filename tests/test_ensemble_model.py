@@ -20,11 +20,12 @@ class TestEnsembleModel(unittest.TestCase):
         self.assertEqual(self.model.target_horizon, 6)
         self.assertEqual(self.model.target_col, 'RECESSION_FORWARD_6M')
         self.assertIsNotNone(self.model.models)
+        self.assertIsInstance(self.model.active_models, list)
         self.assertFalse(self.model.is_fitted)
     
     def test_prepare_data(self):
         """Test data preparation"""
-        dates = pd.date_range('2020-01-01', periods=100, freq='M')
+        dates = pd.date_range('2020-01-01', periods=100, freq='ME')
         df = pd.DataFrame({
             'feature1': np.random.randn(100),
             'feature2': np.random.randn(100),
@@ -42,12 +43,13 @@ class TestEnsembleModel(unittest.TestCase):
     
     def test_select_features(self):
         """Test feature selection"""
-        dates = pd.date_range('2020-01-01', periods=200, freq='M')
+        dates = pd.date_range('2020-01-01', periods=200, freq='ME')
         df = pd.DataFrame({
             'feature1': np.random.randn(200),
             'feature2': np.random.randn(200),
             'feature3': np.random.randn(200),
             'RECESSION_FORWARD_6M': np.random.randint(0, 2, 200),
+            'RECESSION_FORWARD_12M': np.random.randint(0, 2, 200),
             'RECESSION': np.random.randint(0, 2, 200)
         }, index=dates)
         
@@ -55,11 +57,12 @@ class TestEnsembleModel(unittest.TestCase):
         
         self.assertIsInstance(features, list)
         self.assertLessEqual(len(features), 2)
+        self.assertNotIn('RECESSION_FORWARD_12M', features)
     
     def test_fit_and_predict(self):
         """Test model fitting and prediction"""
         # Create synthetic data
-        dates = pd.date_range('2020-01-01', periods=100, freq='M')
+        dates = pd.date_range('2020-01-01', periods=100, freq='ME')
         np.random.seed(42)
         
         # Create correlated features

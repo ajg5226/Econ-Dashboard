@@ -1,0 +1,47 @@
+{
+  "id": "conservative_40",
+  "description": "Stronger regularization and leaner feature set",
+  "max_features": 40,
+  "n_cv_splits": 5,
+  "model_config": {
+    "probit": {
+      "C": 0.08
+    },
+    "random_forest": {
+      "n_estimators": 250,
+      "max_depth": 6,
+      "min_samples_split": 24,
+      "min_samples_leaf": 12
+    },
+    "xgboost": {
+      "n_estimators": 300,
+      "max_depth": 4,
+      "learning_rate": 0.02,
+      "min_child_weight": 12,
+      "subsample": 0.8,
+      "colsample_bytree": 0.7
+    }
+  },
+  "selection_metrics": {
+    "Origins_Tested": 11,
+    "Positive_Origins": 4,
+    "AUC": 0.7857142857142857,
+    "PR_AUC": 0.6916666666666667,
+    "Brier": 0.19381973787092785,
+    "LogLoss": 0.5452382251699983,
+    "Precision": 0.6,
+    "Recall": 0.75,
+    "F1": 0.6666666666666665,
+    "Specificity": 0.7142857142857143,
+    "Signal_Rate": 0.45454545454545453,
+    "Mean_Threshold": 0.40545454545454546,
+    "Mean_Train_Rows": 418.1818181818182,
+    "Candidate_ID": "conservative_40",
+    "Description": "Stronger regularization and leaner feature set",
+    "Max_Features": 40,
+    "CV_Splits": 5,
+    "Selection_Rank": 1,
+    "ALFRED_MAE": 0.1610665880107062,
+    "ALFRED_Bias": 0.10670829245385867
+  }
+}

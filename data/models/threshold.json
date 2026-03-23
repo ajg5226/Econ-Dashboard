@@ -1,5 +1,10 @@
 {
-  "decision_threshold": 0.35,
-  "method": "Youden's J statistic",
-  "timestamp": "2026-03-22T04:52:57.040547"
+  "decision_threshold": 0.37,
+  "method": "calibrated training F1 with precision/recall tie-breaks",
+  "ensemble_method": "equal_weight_active",
+  "active_models": [
+    "probit",
+    "random_forest"
+  ],
+  "timestamp": "2026-03-23T15:49:11.158226"
 }

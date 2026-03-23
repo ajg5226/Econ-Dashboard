@@ -1,26 +1,138 @@
 {
-  "timestamp_utc": "2026-03-22T04:52:57.803288Z",
+  "timestamp_utc": "2026-03-23T19:49:11.166564Z",
   "git_sha": "31e9d7d2928b98329d068a5d3039c380db6284f5",
-  "python_version": "3.11.15",
+  "python_version": "3.13.3",
   "horizon_months": 6,
   "train_end_date": null,
-  "max_features": 60,
+  "max_features": 50,
+  "n_cv_splits": 5,
+  "model_config": {},
   "threshold_override": null,
-  "decision_threshold_used": 0.35,
-  "selected_features_count": 78,
+  "decision_threshold_used": 0.37,
+  "threshold_method": "calibrated training F1 with precision/recall tie-breaks",
+  "ensemble_method": "equal_weight_active",
+  "active_models": [
+    "probit",
+    "random_forest"
+  ],
+  "selected_features_count": 50,
   "ensemble_weights": {
-    "probit": 0.3518631814024381,
-    "random_forest": 0.19999691740048953,
-    "xgboost": 0.2488743385899898,
-    "markov_switching": 0.10881459037872881,
-    "lstm": 0.09045097222835376
+    "probit": 0.5,
+    "random_forest": 0.5
   },
   "ensemble_metrics": {
-    "auc": 0.6214848143982002,
-    "brier": 0.06526829478101234,
-    "logloss": 0.25558537079710514
+    "auc": 0.7159730033745781,
+    "pr_auc": 0.2646318255013907,
+    "brier": 0.05612625789974417,
+    "logloss": 0.21218255460012578
   },
   "predictions_rows": 140,
   "latest_prediction_date": "2026-03-31",
-  "latest_known_outcome_date": "2025-09-30"
+  "latest_known_outcome_date": "2025-09-30",
+  "model_selection": {
+    "mode": "strict_vintage_search",
+    "candidate_id": "conservative_40",
+    "description": "Stronger regularization and leaner feature set",
+    "max_features": 40,
+    "n_cv_splits": 5,
+    "model_config": {
+      "probit": {
+        "C": 0.08
+      },
+      "random_forest": {
+        "n_estimators": 250,
+        "max_depth": 6,
+        "min_samples_split": 24,
+        "min_samples_leaf": 12
+      },
+      "xgboost": {
+        "n_estimators": 300,
+        "max_depth": 4,
+        "learning_rate": 0.02,
+        "min_child_weight": 12,
+        "subsample": 0.8,
+        "colsample_bytree": 0.7
+      }
+    },
+    "selection_metrics": {
+      "Origins_Tested": 11,
+      "Positive_Origins": 4,
+      "AUC": 0.7857142857142857,
+      "PR_AUC": 0.6916666666666667,
+      "Brier": 0.19381973787092785,
+      "LogLoss": 0.5452382251699983,
+      "Precision": 0.6,
+      "Recall": 0.75,
+      "F1": 0.6666666666666665,
+      "Specificity": 0.7142857142857143,
+      "Signal_Rate": 0.45454545454545453,
+      "Mean_Threshold": 0.40545454545454546,
+      "Mean_Train_Rows": 418.1818181818182,
+      "Candidate_ID": "conservative_40",
+      "Description": "Stronger regularization and leaner feature set",
+      "Max_Features": 40,
+      "CV_Splits": 5,
+      "Selection_Rank": 1,
+      "ALFRED_MAE": 0.1610665880107062,
+      "ALFRED_Bias": 0.10670829245385867
+    },
+    "promotion_gate": {
+      "passed": false,
+      "reason": "selected candidate underperformed incumbent on AUC, PR_AUC, Brier, LogLoss",
+      "checks": {
+        "AUC": {
+          "candidate": 0.6276715410573679,
+          "incumbent": 0.7159730033745781,
+          "direction": "higher",
+          "passed": false
+        },
+        "PR_AUC": {
+          "candidate": 0.1588342524755385,
+          "incumbent": 0.2646318255013907,
+          "direction": "higher",
+          "passed": false
+        },
+        "Brier": {
+          "candidate": 0.058234771607592016,
+          "incumbent": 0.05612625789974417,
+          "direction": "lower",
+          "passed": false
+        },
+        "LogLoss": {
+          "candidate": 0.41776899408971874,
+          "incumbent": 0.21218255460012578,
+          "direction": "lower",
+          "passed": false
+        }
+      },
+      "candidate_metrics": {
+        "AUC": 0.6276715410573679,
+        "PR_AUC": 0.1588342524755385,
+        "Brier": 0.058234771607592016,
+        "LogLoss": 0.41776899408971874,
+        "Precision": 0.2222222222222222,
+        "Recall": 0.2857142857142857,
+        "F1": 0.25,
+        "Specificity": 0.9448818897637795
+      },
+      "incumbent_metrics": {
+        "AUC": 0.7159730033745781,
+        "PR_AUC": 0.2646318255013907,
+        "Brier": 0.05612625789974417,
+        "LogLoss": 0.21218255460012578,
+        "Precision": 0.4,
+        "Recall": 0.2857142857142857,
+        "F1": 0.3333333333333333,
+        "Specificity": 0.9763779527559056
+      }
+    },
+    "promotion_decision": "retained_incumbent",
+    "final_applied_config": {
+      "candidate_id": "baseline_50",
+      "description": "Current live incumbent",
+      "max_features": 50,
+      "n_cv_splits": 5,
+      "model_config": {}
+    }
+  }
 }

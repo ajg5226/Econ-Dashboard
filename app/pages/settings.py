@@ -181,7 +181,7 @@ with st.form("model_config"):
             "Maximum Features",
             min_value=10,
             max_value=200,
-            value=int(runtime_config.get('max_features', 60)),
+            value=int(runtime_config.get('max_features', 50)),
             step=10
         )
         

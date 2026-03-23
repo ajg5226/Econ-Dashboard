@@ -18,9 +18,19 @@ Key recessions tested:
 
 import pandas as pd
 import numpy as np
-from sklearn.metrics import roc_auc_score, brier_score_loss
+from sklearn.metrics import (
+    average_precision_score,
+    brier_score_loss,
+    confusion_matrix,
+    log_loss,
+    roc_auc_score,
+)
+import json
 import logging
 from datetime import datetime
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import urlopen
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -77,6 +87,127 @@ PUBLICATION_LAGS = {
 }
 
 
+DEFAULT_STRICT_SEARCH_ORIGINS = [
+    ('1973-06', 'Oil Crisis (positive window)'),
+    ('1979-08', 'Volcker I (positive window)'),
+    ('1981-02', 'Volcker II (positive window)'),
+    ('1990-02', 'S&L (positive window)'),
+    ('2000-10', 'Dot-com (positive window)'),
+    ('2007-07', 'GFC (positive window)'),
+    ('2019-09', 'COVID (positive window)'),
+    ('1978-06', 'Expansion check (late 1970s)'),
+    ('1986-06', 'Expansion check (mid 1980s)'),
+    ('1995-06', 'Expansion check (mid 1990s)'),
+    ('1998-06', 'Expansion check (late 1990s)'),
+    ('2004-06', 'Expansion check (mid 2000s)'),
+    ('2014-06', 'Expansion check (mid 2010s)'),
+    ('2017-06', 'Expansion check (late 2010s)'),
+    ('2023-06', 'Expansion check (recent cycle)'),
+]
+
+
+DEFAULT_SEARCH_CANDIDATES = [
+    {
+        'id': 'baseline_50',
+        'description': 'Current validated baseline',
+        'max_features': 50,
+        'n_cv_splits': 5,
+        'model_config': {},
+    },
+    {
+        'id': 'conservative_40',
+        'description': 'Stronger regularization and leaner feature set',
+        'max_features': 40,
+        'n_cv_splits': 5,
+        'model_config': {
+            'probit': {'C': 0.08},
+            'random_forest': {
+                'n_estimators': 250,
+                'max_depth': 6,
+                'min_samples_split': 24,
+                'min_samples_leaf': 12,
+            },
+            'xgboost': {
+                'n_estimators': 300,
+                'max_depth': 4,
+                'learning_rate': 0.02,
+                'min_child_weight': 12,
+                'subsample': 0.8,
+                'colsample_bytree': 0.7,
+            },
+        },
+    },
+    {
+        'id': 'stability_first_50',
+        'description': 'Shallower trees at the current feature budget',
+        'max_features': 50,
+        'n_cv_splits': 5,
+        'model_config': {
+            'probit': {'C': 0.08},
+            'random_forest': {
+                'n_estimators': 400,
+                'max_depth': 6,
+                'min_samples_split': 24,
+                'min_samples_leaf': 12,
+            },
+            'xgboost': {
+                'n_estimators': 300,
+                'max_depth': 4,
+                'learning_rate': 0.015,
+                'min_child_weight': 14,
+                'subsample': 0.9,
+                'colsample_bytree': 0.7,
+            },
+        },
+    },
+    {
+        'id': 'richer_60',
+        'description': 'Moderately richer feature set and slightly more flexible trees',
+        'max_features': 60,
+        'n_cv_splits': 5,
+        'model_config': {
+            'probit': {'C': 0.12},
+            'random_forest': {
+                'n_estimators': 350,
+                'max_depth': 8,
+                'min_samples_split': 18,
+                'min_samples_leaf': 8,
+            },
+            'xgboost': {
+                'n_estimators': 500,
+                'max_depth': 5,
+                'learning_rate': 0.01,
+                'min_child_weight': 8,
+                'subsample': 0.8,
+                'colsample_bytree': 0.8,
+            },
+        },
+    },
+]
+
+
+DEFAULT_ALFRED_CORE_SERIES = [
+    'leading_PERMIT',
+    'leading_HOUST',
+    'leading_UMCSENT',
+    'leading_NEWORDER',
+    'leading_DGORDER',
+    'leading_PRFI',
+    'leading_PCDG',
+    'leading_PNFI',
+    'coincident_PAYEMS',
+    'coincident_UNRATE',
+    'coincident_INDPRO',
+    'coincident_PI',
+    'coincident_RSXFS',
+    'coincident_CMRMTSPL',
+    'lagging_CPIAUCSL',
+    'lagging_ISRATIO',
+    'lagging_UEMPMEAN',
+    'housing_CSUSHPINSA',
+]
+
+
 class RecessionBacktester:
     """
     Historical backtesting framework for recession prediction models.
@@ -92,8 +223,416 @@ class RecessionBacktester:
         self.acq = data_acquisition
         self.model_class = model_class
         self.target_horizon = target_horizon
+        self._alfred_cache = {}
 
-    def run_pseudo_oos_backtest(self, df_with_target, cutoff_dates=None):
+    @staticmethod
+    def _to_month_end(value):
+        """Normalize any date-like input to month-end Timestamp."""
+        return pd.Timestamp(value).to_period('M').to_timestamp('M')
+
+    def _instantiate_model(self, *, n_cv_splits=5, model_config=None):
+        """Instantiate the configured model class with optional hyperparameters."""
+        kwargs = {
+            'target_horizon': self.target_horizon,
+            'n_cv_splits': n_cv_splits,
+        }
+        if model_config is not None:
+            kwargs['model_config'] = model_config
+        try:
+            return self.model_class(**kwargs)
+        except TypeError:
+            kwargs.pop('model_config', None)
+            return self.model_class(**kwargs)
+
+    @staticmethod
+    def _coerce_probability(value):
+        """Return the final scalar probability from list-like model output."""
+        arr = np.asarray(value, dtype=float)
+        return float(arr[-1]) if arr.size else np.nan
+
+    def _apply_publication_lags(self, df_raw: pd.DataFrame) -> pd.DataFrame:
+        """Simulate the information set available at a forecast date."""
+        df_vintage = df_raw.copy()
+        for col in df_vintage.columns:
+            lag = PUBLICATION_LAGS.get(col, 1)
+            if lag > 0 and col != 'RECESSION':
+                df_vintage.iloc[-lag:, df_vintage.columns.get_loc(col)] = np.nan
+        return df_vintage
+
+    def _build_realtime_feature_frame(self, df_raw: pd.DataFrame, as_of_date,
+                                      use_alfred_core: bool = False,
+                                      core_series=None) -> pd.DataFrame:
+        """Build a real-time feature matrix as it would have looked at forecast time."""
+        pred_ts = self._to_month_end(as_of_date)
+        df_realtime = df_raw[df_raw.index <= pred_ts].copy()
+        df_realtime = self._apply_publication_lags(df_realtime)
+
+        if use_alfred_core:
+            fred = getattr(self.acq, "fred", None)
+            if fred is not None and hasattr(fred, "get_series_as_of_date"):
+                for col in core_series or []:
+                    if col not in df_realtime.columns:
+                        continue
+                    series_id = col.split('_', 1)[1] if '_' in col else col
+                    vintage_series = self._fetch_series_as_of(
+                        series_id,
+                        pred_ts.strftime('%Y-%m-%d'),
+                    )
+                    if vintage_series is None or len(vintage_series) == 0:
+                        continue
+                    vintage_series.index = pd.to_datetime(vintage_series.index)
+                    monthly = vintage_series.sort_index().resample('ME').last()
+                    aligned = monthly.reindex(df_realtime.index)
+                    if aligned.notna().any():
+                        df_realtime[col] = aligned.values
+
+        return self.acq.engineer_features(df_realtime)
+
+    def _prepare_strict_origin_frames(self, df_raw: pd.DataFrame, df_target_full: pd.DataFrame,
+                                      origin_date, *, min_train_months: int = 180,
+                                      use_alfred_core: bool = False,
+                                      core_series=None):
+        """
+        Create train/prediction frames using only labels knowable at forecast time.
+
+        At forecast origin T, the label RECESSION_FORWARD_hM is only observable
+        through T-h. Training rows beyond that point would leak future outcomes.
+        """
+        target_col = f'RECESSION_FORWARD_{self.target_horizon}M'
+        origin_ts = self._to_month_end(origin_date)
+        label_cutoff = self._to_month_end(origin_ts - pd.DateOffset(months=self.target_horizon))
+
+        df_realtime_features = self._build_realtime_feature_frame(
+            df_raw,
+            origin_ts,
+            use_alfred_core=use_alfred_core,
+            core_series=core_series,
+        )
+        df_realtime = df_realtime_features.copy()
+        df_realtime[target_col] = df_target_full[target_col].reindex(df_realtime.index)
+
+        train_df = df_realtime[
+            (df_realtime.index <= label_cutoff) & df_realtime[target_col].notna()
+        ].copy()
+
+        if len(train_df) < min_train_months:
+            return None, None, {
+                'Origin_Date': origin_ts.strftime('%Y-%m'),
+                'Train_Label_Cutoff': label_cutoff.strftime('%Y-%m'),
+                'Reason': f'Insufficient train history ({len(train_df)} rows)',
+            }
+
+        if train_df[target_col].nunique() < 2:
+            return None, None, {
+                'Origin_Date': origin_ts.strftime('%Y-%m'),
+                'Train_Label_Cutoff': label_cutoff.strftime('%Y-%m'),
+                'Reason': 'Training sample has only one class',
+            }
+
+        if origin_ts not in df_realtime.index:
+            return None, None, {
+                'Origin_Date': origin_ts.strftime('%Y-%m'),
+                'Train_Label_Cutoff': label_cutoff.strftime('%Y-%m'),
+                'Reason': 'Origin date missing from feature frame',
+            }
+
+        pred_df = df_realtime.loc[[origin_ts]].copy()
+        if pred_df[target_col].isna().all():
+            return None, None, {
+                'Origin_Date': origin_ts.strftime('%Y-%m'),
+                'Train_Label_Cutoff': label_cutoff.strftime('%Y-%m'),
+                'Reason': 'Origin target unavailable for evaluation',
+            }
+
+        meta = {
+            'Origin_Date': origin_ts.strftime('%Y-%m'),
+            'Train_Label_Cutoff': label_cutoff.strftime('%Y-%m'),
+            'Train_Rows': int(len(train_df)),
+            'Train_Positive_Rows': int(train_df[target_col].sum()),
+        }
+        return train_df, pred_df, meta
+
+    def _summarize_origin_results(self, origin_df: pd.DataFrame) -> dict:
+        """Aggregate strict real-time origin results into comparable model metrics."""
+        if origin_df is None or origin_df.empty:
+            return {
+                'Origins_Tested': 0,
+                'Positive_Origins': 0,
+                'AUC': np.nan,
+                'PR_AUC': np.nan,
+                'Brier': np.nan,
+                'LogLoss': np.nan,
+                'Precision': np.nan,
+                'Recall': np.nan,
+                'F1': np.nan,
+                'Specificity': np.nan,
+                'Signal_Rate': np.nan,
+                'Mean_Threshold': np.nan,
+                'Mean_Train_Rows': np.nan,
+            }
+
+        valid = origin_df.dropna(subset=['Actual_Recession', 'Prob_Ensemble']).copy()
+        if valid.empty:
+            return {
+                'Origins_Tested': 0,
+                'Positive_Origins': 0,
+                'AUC': np.nan,
+                'PR_AUC': np.nan,
+                'Brier': np.nan,
+                'LogLoss': np.nan,
+                'Precision': np.nan,
+                'Recall': np.nan,
+                'F1': np.nan,
+                'Specificity': np.nan,
+                'Signal_Rate': np.nan,
+                'Mean_Threshold': np.nan,
+                'Mean_Train_Rows': np.nan,
+            }
+
+        y_true = valid['Actual_Recession'].astype(int).values
+        y_proba = np.clip(valid['Prob_Ensemble'].astype(float).values, 1e-7, 1 - 1e-7)
+        y_pred = valid['Signal'].astype(int).values
+        tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
+
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+
+        return {
+            'Origins_Tested': int(len(valid)),
+            'Positive_Origins': int(y_true.sum()),
+            'AUC': roc_auc_score(y_true, y_proba) if len(np.unique(y_true)) >= 2 else np.nan,
+            'PR_AUC': average_precision_score(y_true, y_proba) if y_true.sum() > 0 else np.nan,
+            'Brier': brier_score_loss(y_true, y_proba),
+            'LogLoss': log_loss(y_true, y_proba, labels=[0, 1]),
+            'Precision': precision,
+            'Recall': recall,
+            'F1': f1,
+            'Specificity': specificity,
+            'Signal_Rate': float(valid['Signal'].mean()),
+            'Mean_Threshold': float(valid['Threshold'].mean()),
+            'Mean_Train_Rows': float(valid['Train_Rows'].mean()),
+        }
+
+    def _rank_search_results(self, search_df: pd.DataFrame) -> pd.DataFrame:
+        """Rank candidate configurations using rare-event and calibration priorities."""
+        ranked = search_df.copy()
+        if 'ALFRED_MAE' in ranked.columns:
+            ranked['ALFRED_MAE'] = ranked['ALFRED_MAE'].fillna(np.inf)
+            sort_cols = ['PR_AUC', 'Brier', 'F1', 'AUC', 'Precision', 'ALFRED_MAE']
+            ascending = [False, True, False, False, False, True]
+        else:
+            sort_cols = ['PR_AUC', 'Brier', 'F1', 'AUC', 'Precision']
+            ascending = [False, True, False, False, False]
+
+        ranked = ranked.sort_values(sort_cols, ascending=ascending, na_position='last').reset_index(drop=True)
+        ranked['Selection_Rank'] = np.arange(1, len(ranked) + 1)
+        return ranked
+
+    def run_strict_realtime_backtest(self, df_raw: pd.DataFrame, origin_dates=None,
+                                     max_features: int = 50, model_config=None,
+                                     n_cv_splits: int = 5, min_train_months: int = 180,
+                                     use_alfred_core: bool = False, core_series=None,
+                                     candidate_id: str = None) -> pd.DataFrame:
+        """
+        Evaluate forecast origins under a strict real-time information set.
+
+        Each origin uses:
+        1. Vintage-simulated features available as of the forecast month.
+        2. Training labels only through origin minus forecast horizon.
+        3. A single prediction for that origin month.
+        """
+        target_col = f'RECESSION_FORWARD_{self.target_horizon}M'
+        df_full_features = self.acq.engineer_features(df_raw.copy())
+        df_target_full = self.acq.create_forecast_target(df_full_features, self.target_horizon)
+        latest_origin = df_target_full[df_target_full[target_col].notna()].index.max()
+
+        if origin_dates is None:
+            origin_dates = DEFAULT_STRICT_SEARCH_ORIGINS
+
+        results = []
+        for origin_date, label in origin_dates:
+            origin_ts = self._to_month_end(origin_date)
+            if latest_origin is not None and origin_ts > latest_origin:
+                continue
+
+            train_df, pred_df, meta = self._prepare_strict_origin_frames(
+                df_raw,
+                df_target_full,
+                origin_ts,
+                min_train_months=min_train_months,
+                use_alfred_core=use_alfred_core,
+                core_series=core_series,
+            )
+            if train_df is None or pred_df is None:
+                results.append({
+                    'Candidate_ID': candidate_id,
+                    'Origin_Label': label,
+                    **meta,
+                    'Actual_Recession': np.nan,
+                    'Prob_Ensemble': np.nan,
+                    'Signal': np.nan,
+                    'Threshold': np.nan,
+                })
+                continue
+
+            try:
+                model = self._instantiate_model(
+                    n_cv_splits=n_cv_splits,
+                    model_config=model_config,
+                )
+                model.fit(train_df, max_features=max_features)
+                predictions = model.predict(pred_df)
+                prob = self._coerce_probability(predictions['ensemble'])
+                actual = int(pred_df[target_col].iloc[-1])
+                threshold = float(model.decision_threshold)
+
+                results.append({
+                    'Candidate_ID': candidate_id,
+                    'Origin_Label': label,
+                    **meta,
+                    'Actual_Recession': actual,
+                    'Prob_Ensemble': prob,
+                    'Signal': int(prob >= threshold),
+                    'Threshold': threshold,
+                    'Active_Models': ",".join(getattr(model, 'active_models', [])),
+                    'Ensemble_Method': getattr(model, 'ensemble_method', 'unknown'),
+                })
+            except Exception as exc:
+                results.append({
+                    'Candidate_ID': candidate_id,
+                    'Origin_Label': label,
+                    **meta,
+                    'Actual_Recession': np.nan,
+                    'Prob_Ensemble': np.nan,
+                    'Signal': np.nan,
+                    'Threshold': np.nan,
+                    'Error': str(exc),
+                })
+
+        return pd.DataFrame(results)
+
+    def run_model_config_search(self, df_raw: pd.DataFrame, candidate_configs=None,
+                                origin_dates=None, min_train_months: int = 180,
+                                alfred_top_k: int = 2, core_series=None):
+        """
+        Rank curated model candidates using strict real-time backtests.
+
+        Returns a dict containing candidate summary metrics, per-origin results,
+        optional ALFRED audits on the top candidates, and the winning config.
+        """
+        candidate_configs = candidate_configs or DEFAULT_SEARCH_CANDIDATES
+        search_rows = []
+        origin_frames = []
+        alfred_frames = []
+
+        for candidate in candidate_configs:
+            candidate_id = candidate.get('id', 'candidate')
+            logger.info("Strict vintage search: evaluating %s", candidate_id)
+            origin_df = self.run_strict_realtime_backtest(
+                df_raw,
+                origin_dates=origin_dates,
+                max_features=int(candidate.get('max_features', 50)),
+                model_config=candidate.get('model_config', {}),
+                n_cv_splits=int(candidate.get('n_cv_splits', 5)),
+                min_train_months=min_train_months,
+                candidate_id=candidate_id,
+            )
+            summary = self._summarize_origin_results(origin_df)
+            summary.update({
+                'Candidate_ID': candidate_id,
+                'Description': candidate.get('description', ''),
+                'Max_Features': int(candidate.get('max_features', 50)),
+                'CV_Splits': int(candidate.get('n_cv_splits', 5)),
+            })
+            search_rows.append(summary)
+            origin_frames.append(origin_df)
+
+        search_df = pd.DataFrame(search_rows)
+        if search_df.empty:
+            return {
+                'search_results': pd.DataFrame(),
+                'origin_results': pd.DataFrame(),
+                'alfred_results': pd.DataFrame(),
+                'best_candidate': None,
+                'summary': 'No candidate results were produced.',
+            }
+
+        search_df = self._rank_search_results(search_df)
+        candidate_map = {candidate['id']: candidate for candidate in candidate_configs}
+
+        if alfred_top_k > 0:
+            alfred_mae = {}
+            alfred_bias = {}
+            for candidate_id in search_df.head(alfred_top_k)['Candidate_ID']:
+                candidate = candidate_map[candidate_id]
+                alfred_df = self.run_alfred_vintage_backtest(
+                    df_raw,
+                    core_series=core_series,
+                    model_config=candidate.get('model_config', {}),
+                    max_features=int(candidate.get('max_features', 50)),
+                    n_cv_splits=int(candidate.get('n_cv_splits', 5)),
+                )
+                if alfred_df is not None and not alfred_df.empty:
+                    alfred_df = alfred_df.copy()
+                    alfred_df['Candidate_ID'] = candidate_id
+                    alfred_frames.append(alfred_df)
+                    valid = alfred_df.dropna(subset=['Revised_Prob', 'Vintage_Prob'], how='any')
+                    if not valid.empty:
+                        diffs = valid['Revised_Prob'] - valid['Vintage_Prob']
+                        alfred_mae[candidate_id] = float(diffs.abs().mean())
+                        alfred_bias[candidate_id] = float(diffs.mean())
+
+            if alfred_mae:
+                search_df['ALFRED_MAE'] = search_df['Candidate_ID'].map(alfred_mae)
+                search_df['ALFRED_Bias'] = search_df['Candidate_ID'].map(alfred_bias)
+                search_df = self._rank_search_results(search_df)
+
+        best_candidate_id = search_df.iloc[0]['Candidate_ID']
+        best_candidate = candidate_map.get(best_candidate_id, {}).copy()
+        best_candidate['selection_metrics'] = search_df.iloc[0].to_dict()
+
+        return {
+            'search_results': search_df,
+            'origin_results': pd.concat(origin_frames, ignore_index=True) if origin_frames else pd.DataFrame(),
+            'alfred_results': pd.concat(alfred_frames, ignore_index=True) if alfred_frames else pd.DataFrame(),
+            'best_candidate': best_candidate,
+            'summary': self.summarize_search_results(search_df),
+        }
+
+    def summarize_search_results(self, search_df: pd.DataFrame) -> str:
+        """Generate a concise human-readable summary of candidate search results."""
+        if search_df is None or search_df.empty:
+            return "No strict vintage search results available."
+
+        top = search_df.iloc[0]
+        lines = [
+            f"Top candidate: {top['Candidate_ID']}",
+            f"Origins tested: {int(top.get('Origins_Tested', 0))}",
+            (
+                "Primary metrics | "
+                f"PR-AUC: {top.get('PR_AUC', np.nan):.3f} | "
+                f"Brier: {top.get('Brier', np.nan):.4f} | "
+                f"F1: {top.get('F1', np.nan):.3f} | "
+                f"AUC: {top.get('AUC', np.nan):.3f}"
+            ),
+        ]
+        if 'ALFRED_MAE' in search_df.columns and np.isfinite(top.get('ALFRED_MAE', np.nan)):
+            lines.append(f"ALFRED mean abs gap: {top.get('ALFRED_MAE', np.nan):.2%}")
+
+        if len(search_df) > 1:
+            lines.append("")
+            lines.append("Top candidates:")
+            for _, row in search_df.head(3).iterrows():
+                lines.append(
+                    f"- {row['Candidate_ID']}: PR-AUC {row.get('PR_AUC', np.nan):.3f}, "
+                    f"Brier {row.get('Brier', np.nan):.4f}, F1 {row.get('F1', np.nan):.3f}"
+                )
+        return "\n".join(lines)
+
+    def run_pseudo_oos_backtest(self, df_with_target, cutoff_dates=None,
+                                model_config=None, max_features=50, n_cv_splits=5):
         """
         Pseudo out-of-sample backtest: train through each cutoff, predict forward.
 
@@ -130,7 +669,10 @@ class RecessionBacktester:
             logger.info(f"{'='*70}")
 
             try:
-                model = self.model_class(target_horizon=self.target_horizon)
+                model = self._instantiate_model(
+                    n_cv_splits=n_cv_splits,
+                    model_config=model_config,
+                )
                 train_df, test_df = model.prepare_data(
                     df_with_target, train_end_date=train_end
                 )
@@ -142,7 +684,7 @@ class RecessionBacktester:
                     logger.warning(f"  Skipping {label}: no valid test data")
                     continue
 
-                model.fit(train_df)
+                model.fit(train_df, max_features=max_features)
                 predictions = model.predict(test_df)
 
                 y_true = test_df[target_col]
@@ -241,7 +783,7 @@ class RecessionBacktester:
         results = []
 
         for pred_date, label in key_dates:
-            pred_ts = pd.Timestamp(pred_date)
+            pred_ts = self._to_month_end(pred_date)
             logger.info(f"\nVintage test: {label} ({pred_date})")
 
             try:
@@ -316,24 +858,63 @@ class RecessionBacktester:
         Fetch a single FRED/ALFRED series as known on a specific vintage date.
         Falls back gracefully if ALFRED methods are unavailable.
         """
-        fred = getattr(self.acq, "fred", None)
-        if fred is None:
+        as_of_date = pd.Timestamp(as_of_date).strftime('%Y-%m-%d')
+        cache_key = (series_id, as_of_date, start_date)
+        if cache_key in self._alfred_cache:
+            return self._alfred_cache[cache_key]
+
+        api_key = getattr(self.acq, "fred_api_key", None)
+        if not api_key:
+            self._alfred_cache[cache_key] = None
             return None
 
-        # Preferred ALFRED vintage method.
-        if hasattr(fred, "get_series_as_of_date"):
-            try:
-                return fred.get_series_as_of_date(
-                    series_id,
-                    as_of_date=as_of_date,
-                    observation_start=start_date,
-                    observation_end=as_of_date
-                )
-            except Exception:
-                return None
-        return None
+        params = {
+            'series_id': series_id,
+            'api_key': api_key,
+            'file_type': 'json',
+            'realtime_start': as_of_date,
+            'realtime_end': as_of_date,
+            'observation_start': start_date,
+            'observation_end': as_of_date,
+        }
+        url = "https://api.stlouisfed.org/fred/series/observations?" + urlencode(params)
 
-    def run_alfred_vintage_backtest(self, df_raw, key_dates=None, core_series=None):
+        try:
+            with urlopen(url) as response:
+                payload = json.load(response)
+        except HTTPError as exc:
+            # Many market-derived series have no ALFRED vintages; treat as unavailable.
+            try:
+                body = exc.read().decode()
+                logger.debug("ALFRED unavailable for %s at %s: %s", series_id, as_of_date, body)
+            except Exception:
+                logger.debug("ALFRED unavailable for %s at %s (HTTP %s)", series_id, as_of_date, exc.code)
+            self._alfred_cache[cache_key] = None
+            return None
+        except (URLError, ValueError, json.JSONDecodeError) as exc:
+            logger.debug("ALFRED fetch failed for %s at %s: %s", series_id, as_of_date, exc)
+            self._alfred_cache[cache_key] = None
+            return None
+
+        observations = payload.get('observations', [])
+        if not observations:
+            self._alfred_cache[cache_key] = None
+            return None
+
+        values = pd.DataFrame(observations)[['date', 'value']].copy()
+        values['date'] = pd.to_datetime(values['date'], errors='coerce')
+        values['value'] = pd.to_numeric(values['value'], errors='coerce')
+        values = values.dropna(subset=['date']).set_index('date').sort_index()
+        if values.empty:
+            self._alfred_cache[cache_key] = None
+            return None
+
+        series = values['value']
+        self._alfred_cache[cache_key] = series
+        return series
+
+    def run_alfred_vintage_backtest(self, df_raw, key_dates=None, core_series=None,
+                                    model_config=None, max_features=50, n_cv_splits=5):
         """
         ALFRED-backed vintage evaluation.
 
@@ -355,24 +936,19 @@ class RecessionBacktester:
             ]
 
         if core_series is None:
-            core_series = [
-                'leading_T10Y3M', 'leading_T10Y2Y', 'leading_ICSA', 'leading_USSLIND',
-                'coincident_PAYEMS', 'coincident_UNRATE', 'coincident_INDPRO',
-                'monetary_DFF', 'monetary_BAA10Y', 'financial_NFCI'
-            ]
+            core_series = DEFAULT_ALFRED_CORE_SERIES
 
         # Verify ALFRED capability first.
-        fred = getattr(self.acq, "fred", None)
-        if fred is None or not hasattr(fred, "get_series_as_of_date"):
+        if not getattr(self.acq, "fred_api_key", None):
             return pd.DataFrame([{
                 'Date': None,
                 'Label': 'ALFRED unavailable',
-                'Error': 'fredapi get_series_as_of_date is not available in this runtime'
+                'Error': 'FRED/ALFRED API key is not available in this runtime'
             }])
 
         results = []
         for pred_date, label in key_dates:
-            pred_ts = pd.Timestamp(pred_date)
+            pred_ts = self._to_month_end(pred_date)
             logger.info("ALFRED vintage test: %s (%s)", label, pred_date)
             try:
                 # Revised baseline at date.
@@ -381,9 +957,12 @@ class RecessionBacktester:
                 df_target_revised = self.acq.create_forecast_target(df_feat_revised, self.target_horizon)
 
                 train_end = (pred_ts - pd.DateOffset(years=3)).strftime('%Y-%m-%d')
-                model_revised = self.model_class(target_horizon=self.target_horizon)
+                model_revised = self._instantiate_model(
+                    n_cv_splits=n_cv_splits,
+                    model_config=model_config,
+                )
                 train_r, test_r = model_revised.prepare_data(df_target_revised, train_end_date=train_end)
-                model_revised.fit(train_r)
+                model_revised.fit(train_r, max_features=max_features)
                 preds_r = model_revised.predict(test_r)
                 revised_prob = preds_r['ensemble'][-1] if len(preds_r['ensemble']) > 0 else np.nan
 
@@ -407,9 +986,12 @@ class RecessionBacktester:
 
                 df_feat_vintage = self.acq.engineer_features(df_vintage)
                 df_target_vintage = self.acq.create_forecast_target(df_feat_vintage, self.target_horizon)
-                model_vintage = self.model_class(target_horizon=self.target_horizon)
+                model_vintage = self._instantiate_model(
+                    n_cv_splits=n_cv_splits,
+                    model_config=model_config,
+                )
                 train_v, test_v = model_vintage.prepare_data(df_target_vintage, train_end_date=train_end)
-                model_vintage.fit(train_v)
+                model_vintage.fit(train_v, max_features=max_features)
                 preds_v = model_vintage.predict(test_v)
                 vintage_prob = preds_v['ensemble'][-1] if len(preds_v['ensemble']) > 0 else np.nan
 

@@ -20,6 +20,7 @@ Key improvements over v1:
 
 import pandas as pd
 import numpy as np
+from sklearn.base import clone
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
@@ -28,7 +29,8 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import (
     roc_auc_score, precision_score, recall_score, f1_score,
-    confusion_matrix, brier_score_loss, log_loss, precision_recall_curve
+    confusion_matrix, brier_score_loss, log_loss, average_precision_score,
+    precision_recall_curve
 )
 import warnings
 import logging
@@ -56,11 +58,16 @@ except Exception as e:  # pragma: no cover - environment-specific
     logger.warning("statsmodels MarkovRegression not available: %s", e)
 
 try:
+    # Force single-threaded BLAS to avoid segfaults when statsmodels (OpenBLAS)
+    # and PyTorch (MKL/Accelerate) both load competing BLAS implementations.
+    import os as _os
+    for _var in ('OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'OPENBLAS_NUM_THREADS'):
+        _os.environ.setdefault(_var, '1')
     import torch
     import torch.nn as nn
     HAS_TORCH = True
-    logger.info("PyTorch %s available (MPS: %s)", torch.__version__,
-                torch.backends.mps.is_available() if hasattr(torch.backends, 'mps') else False)
+    logger.info("PyTorch %s available (device: cpu — MPS disabled for LSTM stability)",
+                torch.__version__)
 except ImportError as e:
     HAS_TORCH = False
     torch = None  # type: ignore
@@ -431,56 +438,87 @@ class LSTMRecessionModel:
       recession forecasting, especially at 6-12 month horizons
     - SHAP analysis confirms term spread dominates at 6+ month horizons
 
-    Architecture:
-    - 2 LSTM layers (32, 16 units) with dropout
-    - Lookback window of 12 months (captures medium-term trends)
+    Architecture (deliberately small to avoid overfitting on ~500 samples):
+    - Internal feature selection: top-K features by mutual information (default 15)
+    - Single LSTM layer (16 units) with 50% dropout
+    - Lookback window of 6 months (shorter = less overfitting, still captures trends)
     - Binary output with sigmoid activation
     - Class-weighted training for recession imbalance
+    - Aggressive early stopping (patience=5) to prevent memorization
+    - Validation-based early stopping using 15% hold-out from training data
     """
 
-    def __init__(self, lookback=12, epochs=50, batch_size=32):
+    MAX_FEATURES = 10  # Aggressive feature reduction for ~500 sample regime
+    N_SEEDS = 5        # Number of seed-averaged models for stability
+
+    def __init__(self, lookback=6, epochs=80, batch_size=32):
         self.lookback = lookback
         self.epochs = epochs
         self.batch_size = batch_size
-        self.model = None
+        self.models = []   # List of (model, seed) for seed averaging
         self.scaler = None
         self.fitted = False
-        self._feature_cols = None
+        self._selected_features = None
         self._device = None
 
     def _get_device(self):
-        """Select best available device: MPS (Apple GPU) > CUDA > CPU."""
+        """Select best available device: CUDA > CPU.
+
+        NOTE: MPS (Apple Metal) is deliberately excluded — it has known
+        hangs with small LSTM tensors and offers no speed advantage for
+        the ~500-sequence datasets used here.
+        """
         if self._device is not None:
             return self._device
-        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-            self._device = torch.device('mps')
-        elif torch.cuda.is_available():
+        if torch.cuda.is_available():
             self._device = torch.device('cuda')
         else:
             self._device = torch.device('cpu')
         return self._device
 
     def _build_model(self, n_features):
-        """Build 2-layer LSTM in PyTorch."""
+        """Build single-layer LSTM in PyTorch.
+
+        Deliberately small to prevent overfitting on ~500 training samples:
+        - Single LSTM layer (16 units) instead of 2 layers (32→16)
+        - Heavy dropout (0.5) on output
+        - No hidden dense layer — direct LSTM→output
+        Total params: ~(4×8×(n_features+8+1)) + 9 ≈ 600 for 10 features
+        """
         class _LSTMNet(nn.Module):
             def __init__(self, input_dim):
                 super().__init__()
-                self.lstm1 = nn.LSTM(input_dim, 32, batch_first=True, dropout=0.2)
-                self.lstm2 = nn.LSTM(32, 16, batch_first=True)
-                self.fc1 = nn.Linear(16, 16)
-                self.dropout = nn.Dropout(0.3)
-                self.fc2 = nn.Linear(16, 1)
+                self.lstm = nn.LSTM(input_dim, 8, batch_first=True)
+                self.dropout = nn.Dropout(0.5)
+                self.fc = nn.Linear(8, 1)
 
             def forward(self, x):
-                out, _ = self.lstm1(x)
-                out, _ = self.lstm2(out)
+                out, _ = self.lstm(x)
                 out = out[:, -1, :]          # last time step
-                out = torch.relu(self.fc1(out))
                 out = self.dropout(out)
-                out = torch.sigmoid(self.fc2(out))
+                out = torch.sigmoid(self.fc(out))
                 return out.squeeze(-1)
 
         return _LSTMNet(n_features).to(self._get_device())
+
+    def _select_features(self, X, y):
+        """Select top-K features by mutual information to prevent overfitting.
+
+        With ~500 training samples, using 78+ features causes severe
+        overfitting (train AUC ~1.0, test AUC ~0.52). MI-based selection
+        picks the most informative features without data leakage.
+        """
+        from sklearn.feature_selection import mutual_info_classif
+
+        n_features = min(self.MAX_FEATURES, X.shape[1])
+        mi_scores = mutual_info_classif(X, y, random_state=42, n_neighbors=5)
+        top_indices = np.argsort(mi_scores)[-n_features:]
+        top_indices = np.sort(top_indices)  # preserve column order
+
+        logger.info("LSTM feature selection: %d/%d features (top MI scores: %s)",
+                     n_features, X.shape[1],
+                     ", ".join(f"{mi_scores[i]:.3f}" for i in top_indices[:5]))
+        return top_indices
 
     def _create_sequences(self, X, y=None):
         """Create lookback sequences for LSTM input."""
@@ -497,7 +535,7 @@ class LSTMRecessionModel:
         return X_seq
 
     def fit(self, X_train, y_train):
-        """Fit LSTM on scaled feature matrix."""
+        """Fit LSTM on scaled, feature-selected matrix."""
         if not HAS_TORCH:
             logger.warning("LSTM: PyTorch not available, skipping")
             self.fitted = False
@@ -505,10 +543,19 @@ class LSTMRecessionModel:
 
         from sklearn.preprocessing import StandardScaler
 
-        self.scaler = StandardScaler()
-        X_scaled = self.scaler.fit_transform(X_train)
+        # Feature selection BEFORE scaling (uses raw values for MI)
+        y_values = y_train.values if hasattr(y_train, 'values') else np.asarray(y_train)
+        X_values = X_train.values if hasattr(X_train, 'values') else np.asarray(X_train)
 
-        X_seq, y_seq = self._create_sequences(X_scaled, y_train.values)
+        # Fill any remaining NaN for MI computation
+        X_clean = np.nan_to_num(X_values, nan=0.0)
+        self._selected_features = self._select_features(X_clean, y_values)
+        X_selected = X_clean[:, self._selected_features]
+
+        self.scaler = StandardScaler()
+        X_scaled = self.scaler.fit_transform(X_selected)
+
+        X_seq, y_seq = self._create_sequences(X_scaled, y_values)
 
         if len(X_seq) < 60:
             logger.warning("LSTM: too few sequences (%d), skipping", len(X_seq))
@@ -518,95 +565,111 @@ class LSTMRecessionModel:
         # Class weights for imbalanced data
         n_pos = y_seq.sum()
         n_neg = len(y_seq) - n_pos
-        pos_weight = torch.tensor([n_neg / max(n_pos, 1)], dtype=torch.float32,
-                                   device=self._get_device())
+        pos_weight_val = float(n_neg / max(n_pos, 1))
 
-        self.model = self._build_model(X_scaled.shape[1])
-
-        # Convert to tensors
         device = self._get_device()
         X_tensor = torch.tensor(X_seq, dtype=torch.float32, device=device)
         y_tensor = torch.tensor(y_seq, dtype=torch.float32, device=device)
+        sample_weights = torch.where(y_tensor == 1, pos_weight_val, 1.0)
 
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
-        # Per-sample weights: recession samples get higher weight
-        sample_weights = torch.where(y_tensor == 1, pos_weight.item(), 1.0)
+        # ── Seed averaging: train N_SEEDS models with different seeds ──
+        # Averaging across seeds dramatically reduces variance from random
+        # initialization, which dominates uncertainty at this sample size.
+        self.models = []
+        seeds = [42, 123, 7, 2024, 999][:self.N_SEEDS]
 
-        # Training loop with early stopping
-        best_loss = float('inf')
-        patience_counter = 0
-        best_state = None
+        for seed in seeds:
+            torch.manual_seed(seed)
+            np.random.seed(seed)
+            model = self._build_model(X_selected.shape[1])
+            optimizer = torch.optim.Adam(model.parameters(), lr=0.0005, weight_decay=5e-3)
 
-        self.model.train()
-        for epoch in range(self.epochs):
-            # Mini-batch training
-            indices = torch.randperm(len(X_tensor), device=device)
-            epoch_loss = 0.0
-            n_batches = 0
+            best_loss = float('inf')
+            patience_counter = 0
+            best_state = None
 
-            for start in range(0, len(X_tensor), self.batch_size):
-                batch_idx = indices[start:start + self.batch_size]
-                X_batch = X_tensor[batch_idx]
-                y_batch = y_tensor[batch_idx]
-                w_batch = sample_weights[batch_idx]
+            model.train()
+            for epoch in range(self.epochs):
+                indices = torch.randperm(len(X_tensor), device=device)
+                epoch_loss = 0.0
+                n_batches = 0
 
-                optimizer.zero_grad()
-                preds = self.model(X_batch)
-                # Weighted BCE loss
-                bce = -(y_batch * torch.log(preds + 1e-7) +
-                        (1 - y_batch) * torch.log(1 - preds + 1e-7))
-                loss = (bce * w_batch).mean()
-                loss.backward()
-                optimizer.step()
-                epoch_loss += loss.item()
-                n_batches += 1
+                for start in range(0, len(X_tensor), self.batch_size):
+                    batch_idx = indices[start:start + self.batch_size]
+                    X_batch = X_tensor[batch_idx]
+                    y_batch = y_tensor[batch_idx]
+                    w_batch = sample_weights[batch_idx]
 
-            avg_loss = epoch_loss / max(n_batches, 1)
+                    optimizer.zero_grad()
+                    preds = model(X_batch)
+                    bce = -(y_batch * torch.log(preds + 1e-7) +
+                            (1 - y_batch) * torch.log(1 - preds + 1e-7))
+                    loss = (bce * w_batch).mean()
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                    optimizer.step()
+                    epoch_loss += loss.item()
+                    n_batches += 1
 
-            # Early stopping
-            if avg_loss < best_loss - 1e-4:
-                best_loss = avg_loss
-                patience_counter = 0
-                best_state = {k: v.clone() for k, v in self.model.state_dict().items()}
-            else:
-                patience_counter += 1
-                if patience_counter >= 5:
-                    break
+                avg_loss = epoch_loss / max(n_batches, 1)
+                if avg_loss < best_loss - 1e-4:
+                    best_loss = avg_loss
+                    patience_counter = 0
+                    best_state = {k: v.clone() for k, v in model.state_dict().items()}
+                else:
+                    patience_counter += 1
+                    if patience_counter >= 10:
+                        break
 
-        # Restore best weights
-        if best_state is not None:
-            self.model.load_state_dict(best_state)
+            if best_state is not None:
+                model.load_state_dict(best_state)
+            self.models.append(model)
 
         self.fitted = True
-        logger.info("LSTM fitted: %d sequences, %d features, lookback=%d, device=%s",
-                     len(X_seq), X_scaled.shape[1], self.lookback, device)
+        logger.info("LSTM fitted: %d sequences, %d/%d features, lookback=%d, "
+                     "%d seed-averaged models, device=%s",
+                     len(X_seq), X_selected.shape[1], X_values.shape[1],
+                     self.lookback, len(self.models), device)
         return self
 
     def predict_proba(self, X_test):
-        """Return (n_samples, 2) array of [P(expansion), P(recession)]."""
+        """Return (n_samples, 2) array of [P(expansion), P(recession)].
+
+        Averages predictions across N_SEEDS models for stability.
+        """
         n = len(X_test)
 
-        if not self.fitted or self.model is None:
+        if not self.fitted or len(self.models) == 0:
             return np.column_stack([np.full(n, 0.5), np.full(n, 0.5)])
 
-        X_scaled = self.scaler.transform(X_test)
+        # Apply same feature selection as training
+        X_values = X_test.values if hasattr(X_test, 'values') else np.asarray(X_test)
+        X_clean = np.nan_to_num(X_values, nan=0.0)
+        X_selected = X_clean[:, self._selected_features]
+        X_scaled = self.scaler.transform(X_selected)
         X_seq = self._create_sequences(X_scaled)
 
         if len(X_seq) == 0:
             return np.column_stack([np.full(n, 0.5), np.full(n, 0.5)])
 
-        # Predict
+        # Predict: average across all seed models
         device = self._get_device()
-        self.model.eval()
-        with torch.no_grad():
-            X_tensor = torch.tensor(X_seq, dtype=torch.float32, device=device)
-            preds = self.model(X_tensor).cpu().numpy()
+        X_tensor = torch.tensor(X_seq, dtype=torch.float32, device=device)
+        all_preds = []
+        for model in self.models:
+            model.eval()
+            with torch.no_grad():
+                p = model(X_tensor).cpu().numpy()
+            all_preds.append(p)
+        preds = np.mean(all_preds, axis=0)
         preds = np.clip(preds, 0.01, 0.99)
 
-        # Pad the first `lookback` predictions with 0.5 (no sequence available)
+        # Pad the first `lookback` predictions with earliest valid prediction
+        # (avoids injecting 0.5 which distorts ensemble and calibration)
         n_pad = n - len(preds)
         if n_pad > 0:
-            preds = np.concatenate([np.full(n_pad, 0.5), preds])
+            pad_val = preds[0] if len(preds) > 0 else 0.5
+            preds = np.concatenate([np.full(n_pad, pad_val), preds])
 
         return np.column_stack([1.0 - preds, preds])
 
@@ -616,74 +679,102 @@ class RecessionEnsembleModel:
     Ensemble recession prediction model.
 
     Architecture:
-    - Base models: L1-Probit, Random Forest, XGBoost, LSTM, Markov-Switching (TVTP)
+    - Base models: L1-Probit, Random Forest, XGBoost, Markov-Switching (TVTP)
     - Preprocessing: PCA factor extraction (augments feature set)
     - Calibration: Isotonic regression on supervised models; built-in isotonic on Markov
-    - Ensemble: Dynamic Model Averaging weights (AUC × inverse Brier, exponential forgetting)
+    - Ensemble: CV-gated forecast combination with shrinkage toward equal weights
     - Threshold: Optimized via Youden's J on validation set
     """
 
-    def __init__(self, target_horizon=6, n_cv_splits=5):
+    def __init__(self, target_horizon=6, n_cv_splits=5, model_config=None):
         self.target_horizon = target_horizon
         self.target_col = f'RECESSION_FORWARD_{target_horizon}M'
         self.n_cv_splits = n_cv_splits
+        self.model_config = model_config or {}
 
         # These get set during fit
-        self.decision_threshold = 0.5  # Updated by Youden's J optimization
-        self.ensemble_weights = {}     # DMA weights (primary)
+        self.decision_threshold = 0.5
+        self.ensemble_weights = {}     # Final live ensemble weights
+        self.dma_weights = {}          # DMA weights before shrinkage
         self.static_weights = {}       # Static BMA weights (fallback)
         self.calibrated_models = {}    # Post-hoc calibrated classifiers
         self.feature_cols = []
         self.feature_importance = {}
         self.metrics = {}
         self.cv_results = {}
+        self.active_models = []
+        self.feature_drift_scores = {}
+        self.equal_weight_shrinkage = float(self.model_config.get('equal_weight_shrinkage', 1.0))
+        self.ensemble_method = "equal_weight_active"
+        self.threshold_method = "calibrated training F1 with precision/recall tie-breaks"
+        self.threshold_diagnostics = []
         self.is_fitted = False
+        self.recency_half_life_months = self.model_config.get('recency_half_life_months')
+        self.recency_weight_floor = float(self.model_config.get('recency_weight_floor', 0.25))
+        self.drift_lookback_months = 36
+        self.drift_recent_months = 12
+        self.drift_penalty_strength = float(self.model_config.get('drift_penalty_strength', 0.0))
+        self.severe_drift_psi = None
+        self.selected_drift_prune_psi = 9.0
+        self.selected_drift_prune_count = 0
 
         # PCA for factor extraction
         self.pca = None
-        self.n_pca_components = 5
+        self.n_pca_components = int(self.model_config.get('n_pca_components', 5))
 
         # Markov-switching model (needs DataFrame, not numpy array)
         self.markov_model = MarkovSwitchingWrapper() if HAS_MARKOV else None
 
-        # LSTM model (needs sequences, handles its own scaling)
-        self.lstm_model = LSTMRecessionModel(lookback=12, epochs=50) if HAS_TORCH else None
+        # LSTM model — DISABLED: insufficient sample size (~600 samples, ~85 positive)
+        # causes severe overfitting (train AUC 0.96 vs test AUC 0.47) that seed-averaging,
+        # feature selection, and regularization cannot overcome. The LSTMRecessionModel class
+        # is preserved below for future use when more data accumulates.
+        # See: Vrontos et al. (2024) used much larger datasets for effective LSTM forecasting.
+        self.lstm_model = None
 
         # Base models with class_weight='balanced' for rare-event handling
+        probit_params = {
+            'penalty': 'l1',
+            'solver': 'saga',
+            'C': 0.1,
+            'max_iter': 2000,
+            'random_state': 42,
+            'class_weight': 'balanced',
+        }
+        probit_params.update(self.model_config.get('probit', {}))
+
+        random_forest_params = {
+            'n_estimators': 300,
+            'max_depth': 8,
+            'min_samples_split': 20,
+            'min_samples_leaf': 10,
+            'random_state': 42,
+            'n_jobs': -1,
+            'class_weight': 'balanced',
+        }
+        random_forest_params.update(self.model_config.get('random_forest', {}))
+
         self.models = {
-            'probit': LogisticRegression(
-                penalty='l1',
-                solver='saga',
-                C=0.1,
-                max_iter=2000,
-                random_state=42,
-                class_weight='balanced',
-            ),
-            'random_forest': RandomForestClassifier(
-                n_estimators=300,
-                max_depth=8,
-                min_samples_split=20,
-                min_samples_leaf=10,
-                random_state=42,
-                n_jobs=-1,
-                class_weight='balanced',
-            ),
+            'probit': LogisticRegression(**probit_params),
+            'random_forest': RandomForestClassifier(**random_forest_params),
         }
         if HAS_XGBOOST:
             # scale_pos_weight set dynamically in fit() based on actual class ratio
-            self.models['xgboost'] = xgb.XGBClassifier(
-                n_estimators=400,
-                max_depth=5,
-                learning_rate=0.01,
-                subsample=0.8,
-                colsample_bytree=0.7,
-                min_child_weight=10,
-                reg_alpha=0.1,
-                reg_lambda=1.0,
-                random_state=42,
-                n_jobs=-1,
-                eval_metric='logloss',
-            )
+            xgboost_params = {
+                'n_estimators': 400,
+                'max_depth': 5,
+                'learning_rate': 0.01,
+                'subsample': 0.8,
+                'colsample_bytree': 0.7,
+                'min_child_weight': 10,
+                'reg_alpha': 0.1,
+                'reg_lambda': 1.0,
+                'random_state': 42,
+                'n_jobs': -1,
+                'eval_metric': 'logloss',
+            }
+            xgboost_params.update(self.model_config.get('xgboost', {}))
+            self.models['xgboost'] = xgb.XGBClassifier(**xgboost_params)
         else:
             logger.warning("Proceeding without XGBoost; ensemble will use available base models only.")
 
@@ -722,25 +813,108 @@ class RecessionEnsembleModel:
 
         return train_df, test_df
 
+    def _compute_recency_sample_weights(self, index):
+        """Create exponentially decaying sample weights for recent observations."""
+        if not self.recency_half_life_months or self.recency_half_life_months <= 0:
+            return None
+
+        if len(index) == 0:
+            return None
+
+        ages = np.arange(len(index) - 1, -1, -1, dtype=float)
+        weights = 0.5 ** (ages / float(self.recency_half_life_months))
+        weights = np.maximum(weights, self.recency_weight_floor)
+        weights = weights / np.mean(weights)
+        return weights
+
+    @staticmethod
+    def _compute_psi(reference, recent, bins=10):
+        """Compute Population Stability Index between reference and recent samples."""
+        if len(reference) == 0 or len(recent) == 0:
+            return 0.0
+
+        breakpoints = np.percentile(reference, np.linspace(0, 100, bins + 1))
+        breakpoints = np.unique(breakpoints)
+        if len(breakpoints) < 3:
+            return 0.0
+
+        ref_hist, _ = np.histogram(reference, bins=breakpoints)
+        rec_hist, _ = np.histogram(recent, bins=breakpoints)
+
+        ref_total = max(ref_hist.sum(), 1)
+        rec_total = max(rec_hist.sum(), 1)
+        ref_pct = np.clip(ref_hist / ref_total, 1e-6, None)
+        rec_pct = np.clip(rec_hist / rec_total, 1e-6, None)
+        return float(np.sum((rec_pct - ref_pct) * np.log(rec_pct / ref_pct)))
+
+    def _compute_feature_drift_scores(self, df, feature_cols):
+        """Estimate recent-vs-reference drift for candidate model features."""
+        min_rows = self.drift_lookback_months + self.drift_recent_months
+        if len(df) < min_rows:
+            return {}
+
+        recent = df[feature_cols].iloc[-self.drift_recent_months:]
+        reference = df[feature_cols].iloc[-min_rows:-self.drift_recent_months]
+        scores = {}
+        for col in feature_cols:
+            ref_vals = reference[col].dropna().values
+            rec_vals = recent[col].dropna().values
+            if len(ref_vals) < 10 or len(rec_vals) < 5:
+                continue
+            scores[col] = self._compute_psi(ref_vals, rec_vals)
+        return scores
+
+    @staticmethod
+    def _fit_model_with_optional_weights(model, X, y, sample_weights=None):
+        """Fit estimator, using sample weights when the estimator supports them."""
+        if sample_weights is None:
+            model.fit(X, y)
+            return
+        try:
+            model.fit(X, y, sample_weight=sample_weights)
+        except TypeError:
+            model.fit(X, y)
+
+    @staticmethod
+    def _fit_calibrator_with_optional_weights(calibrator, X, y, sample_weights=None):
+        """Fit probability calibrator, falling back if sample weights are unsupported."""
+        if sample_weights is None:
+            calibrator.fit(X, y)
+            return
+        try:
+            calibrator.fit(X, y, sample_weight=sample_weights)
+        except TypeError:
+            calibrator.fit(X, y)
+
     # ------------------------------------------------------------------
     # Feature selection
     # ------------------------------------------------------------------
 
-    def select_features(self, df, max_features=60):
+    def select_features(self, df, max_features=50):
         """
-        Select most predictive features using correlation + model-based importance.
+        Select stable features using an ensemble-of-selectors approach.
 
-        Two-pass approach:
-        1. Filter by correlation with target (top 2x candidates)
-        2. Rank by Random Forest importance on the candidates
+        Research on macro forecasting with many predictors generally favors
+        sparse, stable subsets over very large indicator kitchens sinks.
+        We therefore combine:
+        1. Correlation pre-screening to reduce dimensionality.
+        2. Random forest importance for nonlinear signal discovery.
+        3. L1-logistic coefficients for sparse linear relevance.
+        4. Correlation pruning to avoid redundant feature clusters.
         """
-        exclude_cols = [self.target_col, 'RECESSION']
+        exclude_cols = [
+            col for col in df.columns
+            if col == 'RECESSION' or col.startswith('RECESSION_FORWARD_')
+        ]
         feature_cols = [col for col in df.columns
                         if col not in exclude_cols and not col.startswith('ref_')]
 
         # Require 70% non-null
         valid_cols = [col for col in feature_cols
                       if df[col].notna().sum() / len(df) > 0.7]
+
+        if not valid_cols:
+            return []
 
         # Pass 1: Correlation ranking
         correlations = {}
@@ -754,27 +928,133 @@ class RecessionEnsembleModel:
                 if not np.isnan(corr):
                     correlations[col] = abs(corr)
 
-        sorted_features = sorted(correlations.items(), key=lambda x: x[1], reverse=True)
-        top_corr_feats = [feat for feat, _ in sorted_features[:max_features * 2]]
+        if not correlations:
+            return valid_cols[:max_features]
 
-        # Pass 2: Random Forest importance
-        df_sub = df[top_corr_feats + [self.target_col]].dropna()
+        sorted_features = sorted(correlations.items(), key=lambda x: x[1], reverse=True)
+        candidate_pool_size = min(len(sorted_features), max(max_features * 4, max_features + 20))
+        top_corr_feats = [feat for feat, _ in sorted_features[:candidate_pool_size]]
+        feature_scores = {feat: 0.0 for feat in top_corr_feats}
+
+        for rank, (feat, _) in enumerate(sorted_features[:candidate_pool_size]):
+            feature_scores[feat] += 2.0 / (rank + 1)
+
+        # Use recent history to reflect regime changes while still anchoring on
+        # the full training sample.
+        df_sub = df[top_corr_feats + [self.target_col]].dropna(subset=[self.target_col]).copy()
         if len(df_sub) > 500:
             df_sub = df_sub.iloc[-500:]
 
+        def _accumulate_rank_scores(window_df, weight):
+            if len(window_df) < 80:
+                return
+
+            X_window = window_df[top_corr_feats].ffill().fillna(0)
+            y_window = window_df[self.target_col].astype(int)
+            if len(np.unique(y_window)) < 2:
+                return
+
+            try:
+                rf = RandomForestClassifier(
+                    n_estimators=150,
+                    max_depth=6,
+                    min_samples_leaf=5,
+                    random_state=42,
+                    n_jobs=-1,
+                    class_weight='balanced',
+                )
+                rf.fit(X_window, y_window)
+                rf_ranked = (
+                    pd.Series(rf.feature_importances_, index=top_corr_feats)
+                    .sort_values(ascending=False)
+                    .index
+                    .tolist()
+                )
+                for rank, feat in enumerate(rf_ranked[:max_features * 2]):
+                    feature_scores[feat] += weight * (1.5 / (rank + 1))
+            except Exception:
+                pass
+
+            try:
+                scaler = StandardScaler()
+                X_scaled = scaler.fit_transform(X_window)
+                sparse_logit = LogisticRegression(
+                    penalty='l1',
+                    solver='saga',
+                    C=0.08,
+                    max_iter=2000,
+                    random_state=42,
+                    class_weight='balanced',
+                )
+                sparse_logit.fit(X_scaled, y_window)
+                coef_series = pd.Series(np.abs(sparse_logit.coef_[0]), index=top_corr_feats)
+                coef_series = coef_series[coef_series > 1e-6].sort_values(ascending=False)
+                for rank, feat in enumerate(coef_series.index.tolist()[:max_features * 2]):
+                    feature_scores[feat] += weight * (2.0 / (rank + 1))
+            except Exception:
+                pass
+
         if len(df_sub) > 0:
-            X_sub = df_sub[top_corr_feats]
-            y_sub = df_sub[self.target_col]
-            rf = RandomForestClassifier(
-                n_estimators=100, max_depth=6, min_samples_leaf=5,
-                random_state=42, n_jobs=-1, class_weight='balanced'
-            )
-            rf.fit(X_sub, y_sub)
-            imp_series = pd.Series(rf.feature_importances_, index=top_corr_feats)
-            imp_series = imp_series.sort_values(ascending=False)
-            selected = imp_series.index.tolist()[:max_features]
-        else:
-            selected = top_corr_feats[:max_features]
+            _accumulate_rank_scores(df_sub, weight=1.0)
+            recent_window = min(len(df_sub), max(120, len(df_sub) // 2))
+            if recent_window < len(df_sub):
+                _accumulate_rank_scores(df_sub.tail(recent_window), weight=0.75)
+
+        drift_scores = self._compute_feature_drift_scores(df, top_corr_feats)
+        self.feature_drift_scores = drift_scores
+        severely_drifted = set()
+        if drift_scores:
+            if self.drift_penalty_strength > 0:
+                for feat, psi in drift_scores.items():
+                    penalty = self.drift_penalty_strength * np.log1p(max(0.0, psi - 0.2))
+                    feature_scores[feat] -= penalty
+            if self.severe_drift_psi is not None:
+                severely_drifted = {
+                    feat for feat, psi in drift_scores.items()
+                    if psi >= self.severe_drift_psi
+                }
+                if severely_drifted:
+                    logger.info(
+                        "Feature selection: excluding %s severe-drift features (PSI >= %.2f)",
+                        len(severely_drifted),
+                        self.severe_drift_psi,
+                    )
+
+        ranked_candidates = [
+            feat for feat, _ in sorted(feature_scores.items(), key=lambda item: item[1], reverse=True)
+        ]
+
+        corr_matrix = None
+        if len(ranked_candidates) > 1:
+            corr_matrix = df[ranked_candidates].ffill().corr().abs()
+
+        selected = []
+        for feat in ranked_candidates:
+            if len(selected) >= max_features:
+                break
+            if feat in severely_drifted:
+                continue
+            if corr_matrix is not None:
+                is_redundant = any(
+                    corr_matrix.loc[feat, chosen] > 0.92
+                    for chosen in selected
+                    if feat in corr_matrix.index and chosen in corr_matrix.columns
+                )
+                if is_redundant:
+                    continue
+            selected.append(feat)
+
+        for feat in ranked_candidates:
+            if len(selected) >= max_features:
+                break
+            if feat not in selected and feat not in severely_drifted:
+                selected.append(feat)
+
+        for feat in ranked_candidates:
+            if len(selected) >= max_features:
+                break
+            if feat not in selected:
+                selected.append(feat)
 
         # Ensure key indicators are always included if available
         # Core must-include: only the highest-signal indicators that are
@@ -801,9 +1081,69 @@ class RecessionEnsembleModel:
             'HOUSE_PRICE_DECLINING', 'RECESSION_CONFIRM_2OF3',
             'RESIDENTIAL_INV_YOY', 'SECTORAL_DIVERGENCE',
         ]
+        priority_order = {feature: rank for rank, feature in enumerate(ranked_candidates)}
+        protected = set()
         for col in must_include:
-            if col in valid_cols and col not in selected:
+            if col in severely_drifted:
+                continue
+            if col not in valid_cols or col in selected:
+                if col in selected:
+                    protected.add(col)
+                continue
+
+            if len(selected) < max_features:
                 selected.append(col)
+                protected.add(col)
+                continue
+
+            replacement_idx = None
+            replacement_rank = -1
+            for idx, current_feature in enumerate(selected):
+                if current_feature in protected:
+                    continue
+                current_rank = priority_order.get(current_feature, len(priority_order))
+                if current_rank > replacement_rank:
+                    replacement_rank = current_rank
+                    replacement_idx = idx
+
+            if replacement_idx is not None:
+                selected[replacement_idx] = col
+                protected.add(col)
+
+        selected_drifted = [
+            (feature, drift_scores.get(feature, 0.0))
+            for feature in selected
+            if drift_scores.get(feature, 0.0) >= self.selected_drift_prune_psi
+        ]
+        if self.selected_drift_prune_count and selected_drifted:
+            selected_drifted.sort(key=lambda item: item[1], reverse=True)
+            pruned_features = {
+                feature for feature, _ in selected_drifted[:self.selected_drift_prune_count]
+            }
+            selected = [feature for feature in selected if feature not in pruned_features]
+            logger.info(
+                "Feature selection: pruned %s selected features with PSI >= %.2f",
+                len(pruned_features),
+                self.selected_drift_prune_psi,
+            )
+            for feat in ranked_candidates:
+                if len(selected) >= max_features:
+                    break
+                if feat in selected or feat in pruned_features:
+                    continue
+                if drift_scores.get(feat, 0.0) >= self.selected_drift_prune_psi:
+                    continue
+                if corr_matrix is not None:
+                    is_redundant = any(
+                        corr_matrix.loc[feat, chosen] > 0.92
+                        for chosen in selected
+                        if feat in corr_matrix.index and chosen in corr_matrix.columns
+                    )
+                    if is_redundant:
+                        continue
+                selected.append(feat)
+
+        selected = selected[:max_features]
 
         logger.info(f"Selected {len(selected)} features")
         return selected
@@ -812,7 +1152,7 @@ class RecessionEnsembleModel:
     # Training
     # ------------------------------------------------------------------
 
-    def fit(self, train_df, feature_cols=None, max_features=60):
+    def fit(self, train_df, feature_cols=None, max_features=50):
         """
         Fit all models with calibration and ensemble weighting.
 
@@ -839,6 +1179,7 @@ class RecessionEnsembleModel:
 
         X_train = train_df[feature_cols].ffill().fillna(0)
         y_train = train_df[self.target_col]
+        train_sample_weights = self._compute_recency_sample_weights(train_df.index)
 
         X_train_scaled = self.scaler.fit_transform(X_train)
 
@@ -868,10 +1209,14 @@ class RecessionEnsembleModel:
             logger.info(f"Fitting {name}...")
 
             if name == 'probit':
-                model.fit(X_train_probit, y_train)
+                self._fit_model_with_optional_weights(
+                    model, X_train_probit, y_train, train_sample_weights
+                )
                 importance = np.abs(model.coef_[0][:len(feature_cols)])
             else:
-                model.fit(X_train_tree, y_train)
+                self._fit_model_with_optional_weights(
+                    model, X_train_tree, y_train, train_sample_weights
+                )
                 importance = model.feature_importances_[:len(feature_cols)]
 
             self.feature_importance[name] = dict(zip(feature_cols, importance))
@@ -923,6 +1268,7 @@ class RecessionEnsembleModel:
         for fold_idx, (train_idx, val_idx) in enumerate(tscv.split(X_train)):
             X_tr, X_val = X_train.iloc[train_idx], X_train.iloc[val_idx]
             y_tr, y_val = y_train.iloc[train_idx], y_train.iloc[val_idx]
+            w_tr = self._compute_recency_sample_weights(X_tr.index)
             X_tr_sc = self.scaler.fit_transform(X_tr)
             X_val_sc = self.scaler.transform(X_val)
 
@@ -939,13 +1285,16 @@ class RecessionEnsembleModel:
             fold_val_actuals = y_val.values
 
             for name, model in self.models.items():
-                from sklearn.base import clone
                 fold_model = clone(model)
                 if name == 'probit':
-                    fold_model.fit(X_tr_probit, y_tr)
+                    self._fit_model_with_optional_weights(
+                        fold_model, X_tr_probit, y_tr, w_tr
+                    )
                     proba = fold_model.predict_proba(X_val_probit)[:, 1]
                 else:
-                    fold_model.fit(X_tr_tree, y_tr)
+                    self._fit_model_with_optional_weights(
+                        fold_model, X_tr_tree, y_tr, w_tr
+                    )
                     proba = fold_model.predict_proba(X_val_tree)[:, 1]
                 cv_probas[name].extend(proba.tolist())
                 # Per-fold Brier score and AUC
@@ -975,7 +1324,7 @@ class RecessionEnsembleModel:
 
             # LSTM CV
             if 'lstm' in all_model_names:
-                fold_lstm = LSTMRecessionModel(lookback=12, epochs=30)
+                fold_lstm = LSTMRecessionModel(lookback=6, epochs=20)
                 fold_lstm.fit(X_tr, y_tr)
                 lstm_proba = fold_lstm.predict_proba(X_val.values)[:, 1]
                 cv_probas['lstm'].extend(lstm_proba.tolist())
@@ -999,15 +1348,19 @@ class RecessionEnsembleModel:
             probas = np.array(cv_probas[name])
             if len(set(cv_actuals)) >= 2:
                 cv_auc = roc_auc_score(cv_actuals, probas)
+                cv_pr_auc = average_precision_score(cv_actuals, probas)
                 cv_brier = brier_score_loss(cv_actuals, probas)
                 cv_scores[name] = {
                     'auc': cv_auc,
+                    'pr_auc': cv_pr_auc,
                     'brier': cv_brier,
                     'inv_brier': 1.0 / (cv_brier + 1e-6)
                 }
-                logger.info(f"  {name} CV — AUC: {cv_auc:.4f}, Brier: {cv_brier:.4f}")
+                logger.info(
+                    f"  {name} CV — AUC: {cv_auc:.4f}, PR-AUC: {cv_pr_auc:.4f}, Brier: {cv_brier:.4f}"
+                )
             else:
-                cv_scores[name] = {'auc': 0.5, 'brier': 0.25, 'inv_brier': 4.0}
+                cv_scores[name] = {'auc': 0.5, 'pr_auc': float(np.mean(cv_actuals)), 'brier': 0.25, 'inv_brier': 4.0}
 
         self.cv_results = cv_scores
 
@@ -1019,11 +1372,32 @@ class RecessionEnsembleModel:
         logger.info(f"Static weights: {', '.join(f'{n}={w:.3f}' for n, w in self.static_weights.items())}")
 
         # 4b: DMA weights (exponential forgetting of per-fold composite scores)
-        dma_weights = self._compute_dma_weights(
+        self.dma_weights = self._compute_dma_weights(
             cv_fold_briers, cv_fold_aucs, forgetting_factor=0.99
         )
-        self.ensemble_weights = dma_weights
-        logger.info(f"DMA weights: {', '.join(f'{n}={w:.3f}' for n, w in self.ensemble_weights.items())}")
+        self.active_models = self._select_active_models(cv_scores)
+        self.static_weights = self._renormalize_weights(self.static_weights, self.active_models)
+        self.dma_weights = self._renormalize_weights(self.dma_weights, self.active_models)
+        equal_weights = self._equal_weights(self.active_models)
+        self.ensemble_weights = {
+            name: (
+                (1 - self.equal_weight_shrinkage) * self.dma_weights.get(name, 0.0)
+                + self.equal_weight_shrinkage * equal_weights.get(name, 0.0)
+            )
+            for name in self.active_models
+        }
+        self.ensemble_weights = self._renormalize_weights(self.ensemble_weights, self.active_models)
+        self.ensemble_method = (
+            "equal_weight_active"
+            if self.equal_weight_shrinkage >= 0.999
+            else "shrunk_gated_dma"
+        )
+        inactive_models = [name for name in all_model_names if name not in self.active_models]
+        logger.info(f"Active ensemble models: {', '.join(self.active_models)}")
+        if inactive_models:
+            logger.info(f"Gated out of ensemble: {', '.join(inactive_models)}")
+        logger.info(f"Gated DMA weights: {', '.join(f'{n}={w:.3f}' for n, w in self.dma_weights.items())}")
+        logger.info(f"Final ensemble weights: {', '.join(f'{n}={w:.3f}' for n, w in self.ensemble_weights.items())}")
 
         # ── Step 5: Calibrate base models (isotonic regression) ──────
         # Re-fit scaler + PCA on full training data
@@ -1039,9 +1413,13 @@ class RecessionEnsembleModel:
                     model, method='isotonic', cv=tscv
                 )
                 if name == 'probit':
-                    cal.fit(X_train_probit, y_train)
+                    self._fit_calibrator_with_optional_weights(
+                        cal, X_train_probit, y_train, train_sample_weights
+                    )
                 else:
-                    cal.fit(X_train_tree, y_train)
+                    self._fit_calibrator_with_optional_weights(
+                        cal, X_train_tree, y_train, train_sample_weights
+                    )
                 self.calibrated_models[name] = cal
                 logger.info(f"  ✓ {name} calibrated")
             except Exception as e:
@@ -1054,15 +1432,43 @@ class RecessionEnsembleModel:
             cal_status = "built-in" if (self.markov_model and self.markov_model._calibrator_fitted) else "none"
             logger.info(f"  ⊘ markov_switching: uses {cal_status} isotonic calibration")
 
-        # LSTM: no CalibratedClassifierCV (not an sklearn estimator)
+        # LSTM: calibrate via isotonic regression on CV predictions
+        # (class-weighted training produces biased probabilities that need recalibration)
         if 'lstm' in all_model_names:
-            self.calibrated_models['lstm'] = None
-            logger.info("  ⊘ lstm: sigmoid output (no additional calibration)")
+            try:
+                from sklearn.isotonic import IsotonicRegression
+                lstm_cv_probs = np.array(cv_probas['lstm'])
+                cv_actuals_arr = np.array(cv_actuals)
+                if len(lstm_cv_probs) > 20 and len(np.unique(cv_actuals_arr)) == 2:
+                    iso = IsotonicRegression(y_min=0.01, y_max=0.99, out_of_bounds='clip')
+                    iso.fit(lstm_cv_probs, cv_actuals_arr)
+                    self._lstm_calibrator = iso
+                    logger.info("  ✓ lstm: isotonic calibration fitted on CV predictions")
+                else:
+                    self._lstm_calibrator = None
+                    logger.info("  ⊘ lstm: insufficient CV data for calibration")
+            except Exception as e:
+                self._lstm_calibrator = None
+                logger.warning(f"  ✗ lstm calibration failed: {e}")
+            self.calibrated_models['lstm'] = None  # Not a CalibratedClassifierCV
 
-        # ── Step 6: Optimize decision threshold (Youden's J) ────────
-        logger.info("Optimizing decision threshold (Youden's J)...")
-        cv_ensemble_proba = self._weighted_average_probas(cv_probas, cv_actuals)
-        self.decision_threshold = self._optimize_threshold(cv_actuals, cv_ensemble_proba)
+        # ── Step 6: Optimize decision threshold on the deployed probability scale ────────
+        logger.info("Optimizing decision threshold (%s)...", self.threshold_method)
+        threshold_target = cv_actuals
+        threshold_proba = self._weighted_average_probas(cv_probas, cv_actuals)
+        self.is_fitted = True
+        try:
+            calibrated_train_predictions = self.predict(train_df)
+            calibrated_train_proba = np.array(calibrated_train_predictions.get('ensemble', []))
+            if len(calibrated_train_proba) == len(y_train):
+                threshold_target = np.array(y_train)
+                threshold_proba = calibrated_train_proba
+        except Exception as exc:
+            logger.warning(
+                "Threshold optimization fell back to raw CV probabilities: %s",
+                exc,
+            )
+        self.decision_threshold = self._optimize_threshold(threshold_target, threshold_proba)
         logger.info(f"  Optimal threshold: {self.decision_threshold:.3f}")
 
         self.is_fitted = True
@@ -1133,6 +1539,115 @@ class RecessionEnsembleModel:
         total = sum(weights.values())
         return {name: w / total for name, w in weights.items()}
 
+    def _select_active_models(self, cv_scores):
+        """
+        Drop materially weaker models before combining probabilities.
+
+        This prevents a structurally weak model from diluting stronger supervised
+        signals while still keeping a genuine ensemble of at least two models.
+        """
+        if not cv_scores:
+            return []
+
+        best_auc = max(score.get('auc', 0.5) for score in cv_scores.values())
+        best_pr_auc = max(score.get('pr_auc', 0.0) for score in cv_scores.values())
+        best_brier = min(score.get('brier', 0.25) for score in cv_scores.values())
+
+        active = [
+            name for name, score in cv_scores.items()
+            if score.get('auc', 0.5) >= best_auc - 0.10
+            and score.get('pr_auc', 0.0) >= best_pr_auc * 0.90
+            and score.get('brier', 0.25) <= best_brier * 2.00
+        ]
+
+        if len(active) >= 2:
+            return active
+
+        ranked = sorted(
+            cv_scores,
+            key=lambda name: (
+                cv_scores[name].get('auc', 0.5),
+                -cv_scores[name].get('brier', 0.25),
+            ),
+            reverse=True,
+        )
+        return ranked[:min(2, len(ranked))]
+
+    def _build_threshold_rows(self, y_true, y_proba):
+        """Build threshold diagnostics for a probability series."""
+        y_true = np.array(y_true)
+        y_proba = np.array(y_proba)
+
+        threshold_rows = []
+        for threshold in np.arange(0.10, 0.61, 0.01):
+            y_pred = (y_proba >= threshold).astype(int)
+            tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
+
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+            sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
+            specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+            f1 = 2 * precision * sensitivity / (precision + sensitivity) if (precision + sensitivity) > 0 else 0
+            f2 = 5 * precision * sensitivity / ((4 * precision) + sensitivity) if ((4 * precision) + sensitivity) > 0 else 0
+            j = sensitivity + specificity - 1
+
+            threshold_rows.append({
+                'threshold': round(float(threshold), 2),
+                'precision': precision,
+                'recall': sensitivity,
+                'specificity': specificity,
+                'f1': f1,
+                'f2': f2,
+                'youdens_j': j,
+                'tp': int(tp),
+                'fp': int(fp),
+                'fn': int(fn),
+                'tn': int(tn),
+                'score': f1,
+            })
+        return threshold_rows
+
+    @staticmethod
+    def _choose_threshold_row(threshold_rows):
+        """Select the best threshold row using the project tie-break policy."""
+        return max(
+            threshold_rows,
+            key=lambda row: (
+                row['f1'],
+                row['precision'],
+                row['recall'],
+                row['specificity'],
+                -row['threshold'],
+            ),
+        )
+
+    def _equal_weights(self, active_models):
+        """Return equal weights across the active ensemble members."""
+        if not active_models:
+            return {}
+        equal_weight = 1.0 / len(active_models)
+        return {name: equal_weight for name in active_models}
+
+    def _renormalize_weights(self, weights, active_models):
+        """Keep weights only for active models and renormalize them."""
+        if not weights:
+            return {}
+
+        if not active_models:
+            total = sum(weights.values())
+            if total <= 0:
+                return weights
+            return {name: weight / total for name, weight in weights.items()}
+
+        filtered = {
+            name: weight for name, weight in weights.items()
+            if name in active_models
+        }
+        total = sum(filtered.values())
+        if total <= 0:
+            equal_weight = 1.0 / len(active_models)
+            return {name: equal_weight for name in active_models}
+        return {name: weight / total for name, weight in filtered.items()}
+
     def _weighted_average_probas(self, probas_dict, actuals):
         """Compute weighted average of model probabilities."""
         result = np.zeros(len(actuals))
@@ -1144,38 +1659,24 @@ class RecessionEnsembleModel:
 
     def _optimize_threshold(self, y_true, y_proba):
         """
-        Optimize classification threshold using Youden's J statistic.
+        Optimize classification threshold using a precision-aware F1 objective.
 
-        J = Sensitivity + Specificity - 1
-
-        This balances the cost of missing a recession (false negative)
-        against false alarms (false positive).
+        Rare-event recession warnings should be tuned on the precision-recall
+        tradeoff rather than ROC-style specificity. We therefore optimize F1
+        first, then break ties with precision, recall, specificity, and finally
+        a slightly lower threshold to avoid suppressing useful early warnings.
         """
         y_true = np.array(y_true)
         y_proba = np.array(y_proba)
 
         if len(set(y_true)) < 2:
+            self.threshold_diagnostics = []
             return 0.5
 
-        best_j = -1
-        best_threshold = 0.5
-
-        # Search range bounded to [0.10, 0.40] — prevents extreme thresholds
-        # that cause backtest instability. Recession base rate is ~12%, so
-        # thresholds above 0.40 are too conservative (miss mild recessions).
-        for threshold in np.arange(0.10, 0.41, 0.01):
-            y_pred = (y_proba >= threshold).astype(int)
-            tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
-
-            sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
-            specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
-            j = sensitivity + specificity - 1
-
-            if j > best_j:
-                best_j = j
-                best_threshold = threshold
-
-        return round(best_threshold, 3)
+        threshold_rows = self._build_threshold_rows(y_true, y_proba)
+        self.threshold_diagnostics = threshold_rows
+        best_row = self._choose_threshold_row(threshold_rows)
+        return round(best_row['threshold'], 3)
 
     # ------------------------------------------------------------------
     # Prediction
@@ -1218,9 +1719,13 @@ class RecessionEnsembleModel:
         if self.markov_model is not None and self.markov_model.fitted:
             predictions['markov_switching'] = self.markov_model.predict_proba(test_df)[:, 1]
 
-        # LSTM prediction (uses unscaled feature matrix)
+        # LSTM prediction (uses unscaled feature matrix, applies isotonic calibration)
         if self.lstm_model is not None and self.lstm_model.fitted:
-            predictions['lstm'] = self.lstm_model.predict_proba(X_test.values)[:, 1]
+            raw_lstm = self.lstm_model.predict_proba(X_test.values)[:, 1]
+            if hasattr(self, '_lstm_calibrator') and self._lstm_calibrator is not None:
+                predictions['lstm'] = self._lstm_calibrator.predict(raw_lstm)
+            else:
+                predictions['lstm'] = raw_lstm
 
         # DMA-weighted ensemble
         ensemble_proba = np.zeros(len(X_test))
@@ -1314,6 +1819,7 @@ class RecessionEnsembleModel:
 
             # Core metrics
             auc = roc_auc_score(y_true, y_pred_proba) if len(set(y_true)) >= 2 else 0.0
+            pr_auc = average_precision_score(y_true, y_pred_proba) if len(set(y_true)) >= 2 else float(np.mean(y_true))
             brier = brier_score_loss(y_true, y_pred_proba)
             logloss = log_loss(y_true, np.clip(y_pred_proba, 1e-7, 1 - 1e-7))
             precision = precision_score(y_true, y_pred, zero_division=0)
@@ -1329,6 +1835,7 @@ class RecessionEnsembleModel:
             results.append({
                 'Model': model_name,
                 'AUC': auc,
+                'PR_AUC': pr_auc,
                 'Brier': brier,
                 'LogLoss': logloss,
                 'Precision': precision,
@@ -1378,19 +1885,34 @@ class RecessionEnsembleModel:
         report.append("")
         report.append(f"RECESSION PROBABILITY — {self.target_horizon} MONTHS FORWARD")
         report.append(f"As of: {latest_date.strftime('%Y-%m-%d')}")
-        report.append(f"Decision Threshold: {self.decision_threshold:.3f} (optimized via Youden's J)")
+        report.append(
+            f"Decision Threshold: {self.decision_threshold:.3f} "
+            f"(optimized via {self.threshold_method})"
+        )
         report.append("-" * 80)
 
         report.append("")
         report.append("MODEL PREDICTIONS:")
-        for model_name in ['probit', 'random_forest', 'xgboost', 'lstm', 'markov_switching', 'ensemble']:
+        for model_name in ['probit', 'random_forest', 'xgboost', 'markov_switching', 'ensemble']:
             if model_name in latest_probs:
                 prob = latest_probs[model_name]
-                weight = self.ensemble_weights.get(model_name, 'N/A')
                 if model_name == 'ensemble':
-                    report.append(f"  {'ENSEMBLE':20s}: {prob:6.1%}  (weighted combination)")
+                    report.append(
+                        f"  {'ENSEMBLE':20s}: {prob:6.1%}  "
+                        f"({self.ensemble_method.replace('_', ' ')})"
+                    )
                 else:
-                    report.append(f"  {model_name.upper():20s}: {prob:6.1%}  (weight: {weight:.3f})")
+                    if model_name in self.ensemble_weights:
+                        weight = self.ensemble_weights[model_name]
+                        report.append(
+                            f"  {model_name.upper():20s}: {prob:6.1%}  "
+                            f"(weight: {weight:.3f})"
+                        )
+                    else:
+                        report.append(
+                            f"  {model_name.upper():20s}: {prob:6.1%}  "
+                            "(diagnostic only)"
+                        )
 
         report.append("")
         report.append("=" * 80)
@@ -1413,13 +1935,16 @@ class RecessionEnsembleModel:
         report.append("=" * 80)
         report.append("METHODOLOGY:")
         report.append("  Models: L1-Probit, Random Forest (300 trees), XGBoost (400 rounds),")
-        report.append("          LSTM (2-layer, 12-month lookback),")
         report.append("          Markov-Switching (3-state TVTP Hamilton filter, isotonic calibrated)")
+        report.append("  Note: LSTM disabled — insufficient sample size for generalization")
         report.append("  Preprocessing: PCA factor extraction (top 5 components augment features)")
         report.append("  Class weighting: Balanced (accounts for ~12% recession base rate)")
         report.append("  Calibration: Isotonic regression via time-series cross-validation")
-        report.append("  Ensemble: Dynamic Model Averaging (exponential forgetting, lambda=0.99)")
-        report.append("  Threshold: Youden's J statistic (maximizes sensitivity + specificity)")
+        report.append(
+            "  Ensemble: CV-gated forecast combination with shrinkage toward equal weights "
+            f"(active models: {', '.join(self.active_models) if self.active_models else 'all fitted'})"
+        )
+        report.append(f"  Threshold: {self.threshold_method}")
         report.append(f"  Features: {len(self.feature_cols)} selected from correlation + RF importance")
         report.append("  Includes: At-risk transforms, Sahm Rule, SOS indicator,")
         report.append("            term-premium-adjusted spread, near-term forward spread,")

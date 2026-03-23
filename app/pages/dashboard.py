@@ -149,7 +149,7 @@ threshold = st.sidebar.slider(
     max_value=1.0,
     value=round(_default_threshold, 2),
     step=0.05,
-    help="Probability threshold for recession prediction (default: model-optimized via Youden's J)"
+    help="Probability threshold for recession prediction (default: model-optimized on calibrated training probabilities)"
 )
 
 # Main content

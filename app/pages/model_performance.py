@@ -144,6 +144,24 @@ if alfred_summary_file.exists():
     except Exception:
         pass
 
+# Load threshold sweep diagnostics (if available)
+threshold_sweep_df = None
+threshold_sweep_file = DATA_DIR / "threshold_sweep.csv"
+if threshold_sweep_file.exists():
+    try:
+        threshold_sweep_df = pd.read_csv(threshold_sweep_file)
+    except Exception:
+        pass
+
+# Load rolling performance diagnostics (if available)
+rolling_metrics_df = None
+rolling_metrics_file = DATA_DIR / "rolling_metrics.csv"
+if rolling_metrics_file.exists():
+    try:
+        rolling_metrics_df = pd.read_csv(rolling_metrics_file)
+    except Exception:
+        pass
+
 # ── Decision Threshold Info ───────────────────────────────────────────────────
 threshold = threshold_info.get('decision_threshold', 0.5)
 
@@ -151,7 +169,7 @@ st.markdown("---")
 col1, col2, col3 = st.columns(3)
 with col1:
     st.metric("Decision Threshold", f"{threshold:.3f}",
-              help="Optimized via Youden's J statistic (maximizes sensitivity + specificity)")
+              help="Optimized on calibrated training probabilities using an F1 objective with precision/recall tie-breaks")
 with col2:
     st.metric("Optimization Method", threshold_info.get('method', 'Default 0.5'))
 with col3:
@@ -172,12 +190,19 @@ if run_manifest:
         ts = run_manifest.get('timestamp_utc', '')
         st.metric("Run Timestamp", ts[:19] if ts else 'N/A')
     st.caption(f"Git SHA: `{run_manifest.get('git_sha', 'unknown')}`")
+    active_models = run_manifest.get('active_models', [])
+    if active_models:
+        st.caption(
+            "Ensemble method: "
+            f"`{run_manifest.get('ensemble_method', 'unknown')}` | "
+            f"Active models: `{', '.join(active_models)}`"
+        )
 
 # ── Ensemble Weights ──────────────────────────────────────────────────────────
 if ensemble_weights:
     st.markdown("---")
-    st.markdown("### Ensemble Weights (Performance-Weighted)")
-    st.markdown("*Weights derived from inverse Brier score on time-series cross-validation (BMA-inspired)*")
+    st.markdown("### Ensemble Weights")
+    st.markdown("*Live ensemble blend after CV gating; current defaults favor an equal-weight active subset over noisy fully optimized weights*")
 
     weight_cols = st.columns(len(ensemble_weights))
     for i, (model_name, weight) in enumerate(ensemble_weights.items()):
@@ -199,6 +224,28 @@ if cv_results:
         })
     cv_df = pd.DataFrame(cv_rows)
     st.dataframe(cv_df, use_container_width=True, hide_index=True)
+
+if threshold_sweep_df is not None and not threshold_sweep_df.empty:
+    st.markdown("---")
+    st.markdown("### Threshold Sweep Diagnostics")
+    chosen_row = threshold_sweep_df[
+        threshold_sweep_df['threshold'].round(2) == round(float(threshold), 2)
+    ]
+    if not chosen_row.empty:
+        chosen = chosen_row.iloc[0]
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.metric("Chosen Threshold", f"{chosen['threshold']:.2f}")
+        with c2:
+            st.metric("Chosen F1", f"{chosen.get('f1', 0):.3f}")
+        with c3:
+            st.metric("Chosen Precision", f"{chosen.get('precision', 0):.3f}")
+
+    top_thresholds = threshold_sweep_df.sort_values(
+        ['score', 'precision', 'specificity'],
+        ascending=[False, False, False],
+    ).head(10)
+    st.dataframe(top_thresholds, use_container_width=True, hide_index=True)
 
 # ── Performance Metrics Table ─────────────────────────────────────────────────
 if saved_metrics is not None and not saved_metrics.empty:
@@ -335,6 +382,17 @@ if 'Actual_Recession' in predictions_df.columns:
             st.info(f"**Nowcast Months (outcome unknown):** {nowcast_count}")
         if len(known_df) > 0:
             st.info(f"**Positive Rate:** {recession_count / len(known_df):.1%}")
+
+    if rolling_metrics_df is not None and not rolling_metrics_df.empty:
+        st.markdown("---")
+        st.markdown("### Rolling Window Diagnostics")
+        latest_windows = (
+            rolling_metrics_df
+            .sort_values(['Model', 'Window_End'])
+            .groupby('Model', as_index=False)
+            .tail(1)
+        )
+        st.dataframe(latest_windows, use_container_width=True, hide_index=True)
 
     # ── Confidence Intervals ─────────────────────────────────────────────────
     if ci_info:
@@ -487,8 +545,8 @@ if 'Actual_Recession' in predictions_df.columns:
         - **Base Models:** L1-Probit (Estrella-Mishkin style), Random Forest (300 trees), XGBoost (400 rounds)
         - **Class Weighting:** All models use balanced class weights to handle ~12% recession base rate
         - **Calibration:** Isotonic regression via time-series cross-validation (avoids SMOTE miscalibration)
-        - **Ensemble:** Performance-weighted average using inverse Brier score (BMA-inspired)
-        - **Threshold:** Youden's J statistic — maximizes (sensitivity + specificity - 1)
+        - **Ensemble:** CV-gated forecast combination with a default equal-weight active subset
+        - **Threshold:** F1 optimization on calibrated training probabilities with precision/recall tie-breaks
 
         ### Feature Engineering
         - **Standard:** MoM/3M/6M/YoY percent changes, 3M/6M rolling means, 6M rolling volatility
