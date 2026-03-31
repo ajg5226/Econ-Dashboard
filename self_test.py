@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 def build_synthetic_dataset():
     """Create a simple synthetic monthly dataset for testing."""
-    dates = pd.date_range(start="2000-01-01", periods=240, freq="M")  # 20 years
+    dates = pd.date_range(start="2000-01-01", periods=240, freq="ME")  # 20 years
 
     rng = np.random.default_rng(42)
 
@@ -41,6 +41,8 @@ def build_synthetic_dataset():
     recession[(dates >= "2001-03-01") & (dates <= "2002-02-28")] = 1
     # 2008 GFC-style event
     recession[(dates >= "2008-09-01") & (dates <= "2009-06-30")] = 1
+    # Late-cycle slowdown to ensure test split contains positive class examples
+    recession[(dates >= "2017-03-01") & (dates <= "2018-01-31")] = 1
 
     df = pd.DataFrame(
         {
@@ -67,7 +69,7 @@ def main():
     df_features = dummy_acq.engineer_features(df_raw)
     df_final = dummy_acq.create_forecast_target(df_features, horizon_months=6)
 
-    model = RecessionEnsembleModel(target_horizon=6, decision_threshold=0.3)
+    model = RecessionEnsembleModel(target_horizon=6)
     train_df, test_df = model.prepare_data(df_final)
 
     model.fit(train_df)

@@ -1821,7 +1821,7 @@ class RecessionEnsembleModel:
             auc = roc_auc_score(y_true, y_pred_proba) if len(set(y_true)) >= 2 else 0.0
             pr_auc = average_precision_score(y_true, y_pred_proba) if len(set(y_true)) >= 2 else float(np.mean(y_true))
             brier = brier_score_loss(y_true, y_pred_proba)
-            logloss = log_loss(y_true, np.clip(y_pred_proba, 1e-7, 1 - 1e-7))
+            logloss = log_loss(y_true, np.clip(y_pred_proba, 1e-7, 1 - 1e-7), labels=[0, 1])
             precision = precision_score(y_true, y_pred, zero_division=0)
             recall = recall_score(y_true, y_pred, zero_division=0)
             f1 = f1_score(y_true, y_pred, zero_division=0)

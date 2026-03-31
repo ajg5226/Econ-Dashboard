@@ -35,7 +35,7 @@ class TestDataAcquisition(unittest.TestCase):
     def test_fetch_data(self, mock_fred):
         """Test data fetching"""
         # Mock FRED API response
-        mock_series = pd.Series([1.0, 2.0, 3.0], index=pd.date_range('2020-01-01', periods=3, freq='M'))
+        mock_series = pd.Series([1.0, 2.0, 3.0], index=pd.date_range('2020-01-01', periods=3, freq='ME'))
         mock_fred_instance = Mock()
         mock_fred_instance.get_series.return_value = mock_series
         mock_fred.return_value = mock_fred_instance
@@ -48,7 +48,7 @@ class TestDataAcquisition(unittest.TestCase):
     def test_engineer_features(self):
         """Test feature engineering"""
         # Create sample data
-        dates = pd.date_range('2020-01-01', periods=12, freq='M')
+        dates = pd.date_range('2020-01-01', periods=12, freq='ME')
         df = pd.DataFrame({
             'leading_T10Y2Y': np.random.randn(12),
             'coincident_UNRATE': np.random.randn(12),
@@ -64,7 +64,7 @@ class TestDataAcquisition(unittest.TestCase):
     
     def test_create_forecast_target(self):
         """Test forecast target creation"""
-        dates = pd.date_range('2020-01-01', periods=12, freq='M')
+        dates = pd.date_range('2020-01-01', periods=12, freq='ME')
         df = pd.DataFrame({
             'RECESSION': [0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0]
         }, index=dates)
