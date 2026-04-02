@@ -44,6 +44,36 @@ if indicators_df.empty:
     st.warning("No indicator data available. Please run the data refresh in Settings.")
     st.stop()
 
+
+def normalize_indicator_index(df: pd.DataFrame) -> pd.DataFrame:
+    """Coerce date-like row labels into a DatetimeIndex for plotting and display."""
+    if df.empty or isinstance(df.index, pd.DatetimeIndex):
+        return df
+
+    parsed_index = pd.to_datetime(df.index, errors='coerce')
+    valid_mask = pd.notna(parsed_index)
+    if not valid_mask.any():
+        return df
+
+    normalized = df.loc[valid_mask].copy()
+    normalized.index = pd.DatetimeIndex(parsed_index[valid_mask])
+    return normalized.sort_index()
+
+
+def format_as_of(value) -> str:
+    """Format date-like values as YYYY-MM, falling back to a string label."""
+    if value is None or pd.isna(value):
+        return "N/A"
+
+    parsed_value = pd.to_datetime(value, errors='coerce')
+    if pd.notna(parsed_value):
+        return pd.Timestamp(parsed_value).strftime('%Y-%m')
+
+    return str(value)
+
+
+indicators_df = normalize_indicator_index(indicators_df)
+
 # Indicator descriptions — includes new monetary/financial indicators
 INDICATOR_DESCRIPTIONS = {
     # Leading indicators
@@ -276,7 +306,7 @@ for col in available_indicators:
         'Indicator': info['name'],
         'Category': info['category'],
         'Current Value': current_val,
-        'As Of': current_date.strftime('%Y-%m') if current_date is not None else 'N/A',
+        'As Of': format_as_of(current_date),
         'YoY Change': yoy_change,
         'YoY %': yoy_pct,
         '_key': col,
@@ -359,11 +389,11 @@ if selected_indicator in ALL_DESCRIPTIONS:
 
     # Warn if indicator data is stale (last valid > 6 months old)
     last_valid = indicators_df[selected_indicator].last_valid_index()
-    if last_valid is not None:
-        from datetime import datetime
-        staleness_days = (pd.Timestamp.now() - last_valid).days
+    last_valid_ts = pd.to_datetime(last_valid, errors='coerce')
+    if pd.notna(last_valid_ts):
+        staleness_days = (pd.Timestamp.now() - last_valid_ts).days
         if staleness_days > 180:
-            st.warning(f"This indicator has not been updated since {last_valid.strftime('%Y-%m')}. "
+            st.warning(f"This indicator has not been updated since {format_as_of(last_valid_ts)}. "
                        f"It may be discontinued or delayed.")
 
 # Full time series plot
@@ -384,7 +414,7 @@ with col1:
         current_val = series.iloc[-1]
         current_date = series.index[-1]
         st.metric("Current Value", f"{current_val:,.2f}",
-                   help=f"As of {current_date.strftime('%Y-%m')}")
+                   help=f"As of {format_as_of(current_date)}")
     else:
         st.metric("Current Value", "N/A")
 
