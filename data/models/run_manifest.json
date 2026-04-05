@@ -1,6 +1,6 @@
 {
-  "timestamp_utc": "2026-03-29T05:09:14.005663Z",
-  "git_sha": "45522a8a2b631c25808827efeeef722968e7b563",
+  "timestamp_utc": "2026-04-05T05:10:34.558765Z",
+  "git_sha": "cef5bb9383fad04895edc632105fc1c165b12936",
   "python_version": "3.11.15",
   "horizon_months": 6,
   "train_end_date": null,
@@ -8,7 +8,7 @@
   "n_cv_splits": 5,
   "model_config": {},
   "threshold_override": null,
-  "decision_threshold_used": 0.36,
+  "decision_threshold_used": 0.35,
   "threshold_method": "calibrated training F1 with precision/recall tie-breaks",
   "ensemble_method": "equal_weight_active",
   "active_models": [
@@ -21,12 +21,12 @@
     "random_forest": 0.5
   },
   "ensemble_metrics": {
-    "auc": 0.734533183352081,
-    "pr_auc": 0.23423672856532476,
-    "brier": 0.05681254944789051,
-    "logloss": 0.21188460653531907
+    "auc": 0.764904386951631,
+    "pr_auc": 0.31355426914243384,
+    "brier": 0.049238144419099975,
+    "logloss": 0.1840667149210598
   },
   "predictions_rows": 140,
-  "latest_prediction_date": "2026-03-31",
-  "latest_known_outcome_date": "2025-09-30"
+  "latest_prediction_date": "2026-04-30",
+  "latest_known_outcome_date": "2025-10-31"
 }
