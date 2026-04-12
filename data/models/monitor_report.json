@@ -1,28 +1,28 @@
 {
-  "timestamp": "2026-04-05T05:20:36.974003",
+  "timestamp": "2026-04-12T05:31:18.203592",
   "checks": {
     "prediction_stability": {
       "status": "OK",
       "details": {
-        "current_6m_vol": 0.0445,
-        "historical_mean_vol": 0.0427,
-        "historical_max_vol": 0.2869,
-        "last_mom_change": 0.002
+        "current_6m_vol": 0.0573,
+        "historical_mean_vol": 0.0461,
+        "historical_max_vol": 0.3147,
+        "last_mom_change": 0.0025
       }
     },
     "model_disagreement": {
       "status": "OK",
       "details": {
-        "current_spread": 0.1285,
-        "current_std": 0.0603,
+        "current_spread": 0.1615,
+        "current_std": 0.0741,
         "model_predictions": {
-          "Probit": 0.1999,
-          "RandomForest": 0.0727,
-          "XGBoost": 0.1195,
-          "MarkovSwitching": 0.0714
+          "Probit": 0.1615,
+          "RandomForest": 0.0,
+          "XGBoost": 0.0667,
+          "MarkovSwitching": 0.01
         },
-        "mean_historical_spread": 0.0944,
-        "p95_historical_spread": 0.3126
+        "mean_historical_spread": 0.0562,
+        "p95_historical_spread": 0.2156
       }
     },
     "feature_drift": {
@@ -30,24 +30,24 @@
       "details": {
         "features_checked": 49,
         "features_drifted": 36,
-        "mean_psi": 4.7786,
+        "mean_psi": 4.7925,
         "max_psi": 10.9306,
         "top_drifted": {
           "coincident_IURSA_YoY": 10.931,
           "RESIDENTIAL_INV_Z": 10.922,
           "RESIDENTIAL_INV_YOY": 10.922,
-          "leading_PRFI_MoM": 10.659,
-          "AT_RISK_DIFFUSION_WEIGHTED": 9.342
+          "AT_RISK_DIFFUSION_WEIGHTED": 9.342,
+          "leading_PRFI_MoM": 9.197
         }
       }
     },
     "calibration": {
-      "status": "WARNING",
+      "status": "OK",
       "details": {
         "window_months": 24,
-        "mean_predicted": 0.1947,
+        "mean_predicted": 0.1498,
         "observed_rate": 0.0,
-        "calibration_gap": 0.1947,
+        "calibration_gap": 0.1498,
         "observed_months": 18
       }
     },
@@ -55,7 +55,7 @@
       "status": "OK",
       "details": {
         "latest_date": "2026-04-30",
-        "days_old": -25
+        "days_old": -18
       }
     }
   },
@@ -64,13 +64,8 @@
       "level": "WARNING",
       "check": "feature_drift",
       "message": "36 features show significant drift (PSI>0.2). Top: coincident_IURSA_YoY=10.93, RESIDENTIAL_INV_Z=10.92, RESIDENTIAL_INV_YOY=10.92"
-    },
-    {
-      "level": "INFO",
-      "check": "calibration",
-      "message": "Calibration gap: predicted mean=19.5%, observed rate=0.0% over last 24 months"
     }
   ],
-  "alert_count": 2,
+  "alert_count": 1,
   "status": "WARNING"
 }
