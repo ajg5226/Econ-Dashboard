@@ -36,6 +36,27 @@ import warnings
 import logging
 from datetime import datetime
 
+try:
+    from recession_engine.calibration_diag import (
+        reliability_curve as _reliability_curve,
+        expected_calibration_error as _ece,
+        calibration_slope_intercept as _slope_intercept,
+        brier_decomposition as _brier_decomp,
+        fit_calibrator as _fit_calibrator,
+        stationary_block_bootstrap_ci as _stationary_bootstrap,
+        HAS_BETACAL,
+    )
+except ImportError:  # pragma: no cover - when loaded as top-level module
+    from calibration_diag import (  # type: ignore
+        reliability_curve as _reliability_curve,
+        expected_calibration_error as _ece,
+        calibration_slope_intercept as _slope_intercept,
+        brier_decomposition as _brier_decomp,
+        fit_calibrator as _fit_calibrator,
+        stationary_block_bootstrap_ci as _stationary_bootstrap,
+        HAS_BETACAL,
+    )
+
 warnings.filterwarnings('ignore')
 
 logging.basicConfig(level=logging.INFO)
@@ -698,6 +719,8 @@ class RecessionEnsembleModel:
         self.dma_weights = {}          # DMA weights before shrinkage
         self.static_weights = {}       # Static BMA weights (fallback)
         self.calibrated_models = {}    # Post-hoc calibrated classifiers
+        self.calibration_diagnostics = {}  # Per-model reliability/ECE/slope/Brier decomp
+        self.calibrator_choice = {}    # A/B winner per model (isotonic/sigmoid/beta)
         self.feature_cols = []
         self.feature_importance = {}
         self.metrics = {}
@@ -1460,6 +1483,19 @@ class RecessionEnsembleModel:
                 logger.warning(f"  ✗ lstm calibration failed: {e}")
             self.calibrated_models['lstm'] = None  # Not a CalibratedClassifierCV
 
+        # ── Step 5b: Calibration diagnostics + calibrator A/B (measurement only) ─────
+        # We compute reliability curves, ECE, slope/intercept, and the Brier
+        # decomposition on pooled CV out-of-fold predictions for every base model
+        # (uncalibrated CV probabilities) and also run a held-out A/B across
+        # isotonic/sigmoid/beta calibrators. The default calibrator stays isotonic
+        # until the validator sub-agent confirms a winner on vintage origins.
+        self._compute_calibration_diagnostics(
+            cv_probas=cv_probas,
+            cv_actuals=cv_actuals,
+            train_df=train_df,
+            y_train=y_train,
+        )
+
         # ── Step 6: Optimize decision threshold on the deployed probability scale ────────
         logger.info("Optimizing decision threshold (%s)...", self.threshold_method)
         threshold_target = cv_actuals
@@ -1665,6 +1701,168 @@ class RecessionEnsembleModel:
                 result += weight * p
         return result
 
+    # ------------------------------------------------------------------
+    # Calibration diagnostics (A1)
+    # ------------------------------------------------------------------
+
+    def _calibration_summary(self, y_true, y_prob, n_bins=10):
+        """Single-source summary of reliability/ECE/slope/Brier decomp."""
+        y_true = np.asarray(y_true, dtype=float)
+        y_prob = np.asarray(y_prob, dtype=float)
+        if len(y_prob) == 0:
+            return {
+                "ece": float("nan"),
+                "slope": float("nan"),
+                "intercept": float("nan"),
+                "reliability": [],
+                "brier_total": float("nan"),
+                "brier_reliability": float("nan"),
+                "brier_resolution": float("nan"),
+                "brier_uncertainty": float("nan"),
+                "n_samples": 0,
+            }
+        centers, observed, predicted, counts = _reliability_curve(
+            y_true, y_prob, n_bins=n_bins, strategy="quantile"
+        )
+        ece = _ece(y_true, y_prob, n_bins=n_bins)
+        slope, intercept = _slope_intercept(y_true, y_prob)
+        brier = _brier_decomp(y_true, y_prob, n_bins=n_bins)
+        return {
+            "ece": float(ece) if not np.isnan(ece) else None,
+            "slope": float(slope) if not np.isnan(slope) else None,
+            "intercept": float(intercept) if not np.isnan(intercept) else None,
+            "reliability": [
+                [float(c), float(o), float(p), int(n)]
+                for c, o, p, n in zip(centers, observed, predicted, counts)
+            ],
+            "brier_total": float(brier["brier_total"]),
+            "brier_reliability": float(brier["reliability"]),
+            "brier_resolution": float(brier["resolution"]),
+            "brier_uncertainty": float(brier["uncertainty"]),
+            "n_samples": int(len(y_prob)),
+        }
+
+    def _compute_calibration_diagnostics(self, cv_probas, cv_actuals, train_df, y_train):
+        """Compute per-model calibration diagnostics + calibrator A/B.
+
+        Uses the pooled CV out-of-fold predictions as the diagnostic substrate
+        (these are out-of-sample by construction of TimeSeriesSplit) and runs a
+        time-series split A/B across isotonic / sigmoid / beta calibrators on the
+        same pooled predictions. The A/B holdout is the last 20% of the pooled
+        CV records so we never leak future information into the training fold.
+
+        Measurement only — the default calibrator stays isotonic. The winner is
+        exposed via ``self.calibrator_choice`` for the validator sub-agent.
+        """
+
+        self.calibration_diagnostics = {}
+        self.calibrator_choice = {}
+
+        cv_actuals_arr = np.asarray(cv_actuals, dtype=float)
+        if len(cv_actuals_arr) == 0 or len(set(cv_actuals_arr.astype(int))) < 2:
+            logger.info("Calibration diagnostics skipped: insufficient CV labels.")
+            return
+
+        logger.info("Computing calibration diagnostics + calibrator A/B...")
+        methods = ["isotonic", "sigmoid"]
+        if HAS_BETACAL:
+            methods.append("beta")
+
+        # A/B holdout: last 20% of pooled CV records.
+        n_total = len(cv_actuals_arr)
+        n_holdout = max(int(round(n_total * 0.2)), 20)
+        n_holdout = min(n_holdout, max(n_total - 20, 1))
+        train_slice = slice(0, n_total - n_holdout)
+        holdout_slice = slice(n_total - n_holdout, n_total)
+
+        # Per-base-model diagnostics (computed on raw uncalibrated CV probs).
+        for name, probas in cv_probas.items():
+            probas_arr = np.asarray(probas, dtype=float)
+            if len(probas_arr) != n_total:
+                continue
+
+            raw_summary = self._calibration_summary(
+                cv_actuals_arr, probas_arr, n_bins=10
+            )
+            model_entry = {"raw": raw_summary}
+
+            # Try each calibrator; score on holdout via ECE.
+            best_method = None
+            best_ece = np.inf
+            y_tr = cv_actuals_arr[train_slice]
+            p_tr = probas_arr[train_slice]
+            y_ho = cv_actuals_arr[holdout_slice]
+            p_ho = probas_arr[holdout_slice]
+
+            for method in methods:
+                try:
+                    cal = _fit_calibrator(method, y_tr, p_tr)
+                    p_ho_cal = cal.predict_proba(p_ho)
+                    summary = self._calibration_summary(y_ho, p_ho_cal, n_bins=10)
+                    model_entry[method] = summary
+                    if (
+                        summary.get("ece") is not None
+                        and summary["ece"] < best_ece
+                    ):
+                        best_ece = float(summary["ece"])
+                        best_method = method
+                except Exception as exc:
+                    logger.warning(
+                        "Calibrator '%s' failed for %s: %s", method, name, exc
+                    )
+                    model_entry[method] = {"error": str(exc)}
+
+            model_entry["winner"] = best_method or "isotonic"
+            self.calibration_diagnostics[name] = model_entry
+            self.calibrator_choice[name] = best_method or "isotonic"
+
+        # Ensemble diagnostics: weighted CV prediction with live ensemble weights.
+        try:
+            ensemble_cv = self._weighted_average_probas(cv_probas, cv_actuals_arr)
+            if len(ensemble_cv) == n_total:
+                ensemble_entry = {
+                    "raw": self._calibration_summary(
+                        cv_actuals_arr, ensemble_cv, n_bins=10
+                    )
+                }
+                for method in methods:
+                    try:
+                        cal = _fit_calibrator(
+                            method,
+                            cv_actuals_arr[train_slice],
+                            ensemble_cv[train_slice],
+                        )
+                        p_ho_cal = cal.predict_proba(ensemble_cv[holdout_slice])
+                        ensemble_entry[method] = self._calibration_summary(
+                            cv_actuals_arr[holdout_slice], p_ho_cal, n_bins=10
+                        )
+                    except Exception as exc:
+                        ensemble_entry[method] = {"error": str(exc)}
+                best_method = None
+                best_ece = np.inf
+                for method in methods:
+                    ece_val = ensemble_entry.get(method, {}).get("ece")
+                    if ece_val is not None and ece_val < best_ece:
+                        best_ece = float(ece_val)
+                        best_method = method
+                ensemble_entry["winner"] = best_method or "isotonic"
+                self.calibration_diagnostics["ensemble"] = ensemble_entry
+                self.calibrator_choice["ensemble"] = best_method or "isotonic"
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Ensemble calibration diagnostics failed: %s", exc)
+
+        # Log a one-liner per model for transparency.
+        for name, entry in self.calibration_diagnostics.items():
+            raw = entry.get("raw", {})
+            winner = entry.get("winner", "isotonic")
+            logger.info(
+                "  calibration[%s] raw ECE=%.4f slope=%.3f winner=%s",
+                name,
+                (raw.get("ece") or float("nan")),
+                (raw.get("slope") or float("nan")),
+                winner,
+            )
+
     def _optimize_threshold(self, y_true, y_proba):
         """
         Optimize classification threshold using a precision-aware F1 objective.
@@ -1744,25 +1942,35 @@ class RecessionEnsembleModel:
 
         return predictions
 
-    def predict_with_confidence(self, test_df, n_bootstrap=200, ci_level=0.90):
+    def predict_with_confidence(
+        self,
+        test_df,
+        n_bootstrap=200,
+        ci_level=0.90,
+        method="block_bootstrap",
+        block_size_months=12,
+        train_df=None,
+    ):
         """
         Generate predictions with bootstrap confidence intervals.
 
-        Bootstraps the ensemble weight vector to produce a distribution of
-        ensemble probabilities at each time step. This captures uncertainty
-        from model combination (which model to trust) without the cost of
-        refitting base models.
+        Parameters
+        ----------
+        test_df : DataFrame to score.
+        n_bootstrap : bootstrap replicates.
+        ci_level : nominal two-sided coverage (0.90 -> 5/95).
+        method : 'block_bootstrap' (default, Politis-Romano stationary
+                 bootstrap refitting a meta-calibrator per replicate) or
+                 'dirichlet' (legacy ensemble-weight perturbation).
+        block_size_months : mean block length for stationary bootstrap.
+        train_df : training frame used when method='block_bootstrap'. If None
+                    we fall back to Dirichlet CI (block-bootstrap needs labels).
 
-        Also includes model-spread-based uncertainty (disagreement among base
-        models as a natural measure of epistemic uncertainty).
-
-        Returns:
-            dict with keys:
-                'predictions': standard predictions dict
-                'ensemble_ci_lower': lower bound of CI
-                'ensemble_ci_upper': upper bound of CI
-                'ensemble_std': standard deviation across bootstrap samples
-                'model_spread': max - min across base model predictions
+        Returns
+        -------
+        dict with keys:
+            predictions, ensemble_ci_lower, ensemble_ci_upper, ensemble_std,
+            model_spread, ci_level, method, block_size_months, n_bootstrap.
         """
         # Get base predictions
         predictions = self.predict(test_df)
@@ -1770,35 +1978,123 @@ class RecessionEnsembleModel:
         base_names = [n for n in self.ensemble_weights if n in predictions]
         base_probas = np.column_stack([predictions[n] for n in base_names])
         n_obs = len(base_probas)
+        weights = np.array([self.ensemble_weights[n] for n in base_names])
+        live_ensemble = base_probas @ weights
 
-        # Method 1: Bootstrap ensemble weights
+        # Model spread is method-agnostic
+        model_spread = np.max(base_probas, axis=1) - np.min(base_probas, axis=1)
+
+        alpha_tail = (1 - ci_level) / 2
+
+        chosen_method = method
+        fallback_reason = None
+
+        if method == "block_bootstrap":
+            if train_df is None:
+                fallback_reason = "no train_df supplied"
+                chosen_method = "dirichlet"
+            else:
+                try:
+                    train_preds = self.predict(train_df)
+                    train_ensemble = np.column_stack(
+                        [train_preds[n] for n in base_names]
+                    ) @ weights
+                    y_train_arr = np.asarray(
+                        train_df[self.target_col], dtype=float
+                    ).ravel()
+                    if (
+                        len(train_ensemble) < max(24, 2 * block_size_months)
+                        or len(set(y_train_arr.astype(int))) < 2
+                    ):
+                        fallback_reason = (
+                            "insufficient train history for block bootstrap"
+                        )
+                        chosen_method = "dirichlet"
+                except Exception as exc:
+                    fallback_reason = f"train predict failed: {exc}"
+                    chosen_method = "dirichlet"
+
+        if chosen_method == "block_bootstrap":
+            # Refit a quick isotonic meta-calibrator per bootstrap replicate on
+            # the resampled training block, then apply to the test ensemble.
+            X_indices = np.arange(len(train_ensemble))
+
+            def _fit_meta_and_predict_test(indices):
+                # indices are bootstrap row indices into training rows
+                y_boot = y_train_arr[indices]
+                p_boot = train_ensemble[indices]
+                # Need both classes for a meaningful calibration.
+                if len(np.unique(y_boot.astype(int))) < 2:
+                    # Degenerate replicate: return the live test ensemble so this
+                    # replicate contributes a zero-width sample rather than NaN.
+                    return live_ensemble.copy()
+                try:
+                    cal = _fit_calibrator("isotonic", y_boot, p_boot)
+                    return cal.predict_proba(live_ensemble)
+                except Exception:
+                    return live_ensemble.copy()
+
+            # We piggyback on the stationary bootstrap index sampler by passing
+            # indices as X. Each replicate returns n_obs test predictions, but
+            # we aggregate ourselves so _stationary_bootstrap_indices is all we
+            # really need.
+            rng = np.random.default_rng(42)
+            from recession_engine.calibration_diag import (
+                stationary_bootstrap_indices as _sb_indices,
+            )
+
+            bootstrap_tests = np.zeros((int(n_bootstrap), n_obs), dtype=float)
+            for b in range(int(n_bootstrap)):
+                idx = _sb_indices(
+                    len(X_indices), int(block_size_months), rng
+                )
+                bootstrap_tests[b] = _fit_meta_and_predict_test(idx)
+
+            ci_lower = np.quantile(bootstrap_tests, alpha_tail, axis=0)
+            ci_upper = np.quantile(bootstrap_tests, 1 - alpha_tail, axis=0)
+            ensemble_std = bootstrap_tests.std(axis=0, ddof=0)
+
+            return {
+                "predictions": predictions,
+                "ensemble_ci_lower": ci_lower,
+                "ensemble_ci_upper": ci_upper,
+                "ensemble_std": ensemble_std,
+                "model_spread": model_spread,
+                "ci_level": ci_level,
+                "method": "stationary_block_bootstrap",
+                "block_size_months": int(block_size_months),
+                "n_bootstrap": int(n_bootstrap),
+            }
+
+        # ── Dirichlet fallback / explicit legacy path ──
+        if fallback_reason is not None:
+            logger.info(
+                "predict_with_confidence falling back to Dirichlet CI: %s",
+                fallback_reason,
+            )
+
         rng = np.random.RandomState(42)
-        original_weights = np.array([self.ensemble_weights[n] for n in base_names])
-
-        bootstrap_ensembles = np.zeros((n_bootstrap, n_obs))
-        for b in range(n_bootstrap):
-            # Dirichlet perturbation of weights (concentrated around original)
-            # Higher alpha = tighter around original weights
-            alpha = original_weights * 20 + 1  # concentration parameter
+        original_weights = weights.copy()
+        bootstrap_ensembles = np.zeros((int(n_bootstrap), n_obs))
+        for b in range(int(n_bootstrap)):
+            alpha = original_weights * 20 + 1
             sampled_weights = rng.dirichlet(alpha)
             bootstrap_ensembles[b] = base_probas @ sampled_weights
 
-        # Compute CI bounds
-        alpha_tail = (1 - ci_level) / 2
         ci_lower = np.percentile(bootstrap_ensembles, alpha_tail * 100, axis=0)
         ci_upper = np.percentile(bootstrap_ensembles, (1 - alpha_tail) * 100, axis=0)
         ensemble_std = np.std(bootstrap_ensembles, axis=0)
 
-        # Method 2: Model spread (simpler epistemic uncertainty)
-        model_spread = np.max(base_probas, axis=1) - np.min(base_probas, axis=1)
-
         return {
-            'predictions': predictions,
-            'ensemble_ci_lower': ci_lower,
-            'ensemble_ci_upper': ci_upper,
-            'ensemble_std': ensemble_std,
-            'model_spread': model_spread,
-            'ci_level': ci_level,
+            "predictions": predictions,
+            "ensemble_ci_lower": ci_lower,
+            "ensemble_ci_upper": ci_upper,
+            "ensemble_std": ensemble_std,
+            "model_spread": model_spread,
+            "ci_level": ci_level,
+            "method": "dirichlet",
+            "block_size_months": int(block_size_months),
+            "n_bootstrap": int(n_bootstrap),
         }
 
     # ------------------------------------------------------------------

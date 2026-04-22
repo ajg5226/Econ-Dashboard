@@ -15,6 +15,17 @@ import json
 from pathlib import Path
 from datetime import datetime
 
+try:
+    from recession_engine.calibration_diag import (
+        expected_calibration_error as _ece,
+        calibration_slope_intercept as _slope_intercept,
+        brier_decomposition as _brier_decomp,
+    )
+    HAS_CALIBRATION_DIAG = True
+except ImportError:  # pragma: no cover - defensive
+    HAS_CALIBRATION_DIAG = False
+    _ece = _slope_intercept = _brier_decomp = None  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 
@@ -70,9 +81,15 @@ class ModelMonitor:
                 indicators_df, feature_cols
             )
 
-        # 4. Calibration drift
+        # 4. Calibration drift (rolling-window gap)
         if 'Actual_Recession' in predictions_df.columns:
             report['checks']['calibration'] = self._check_calibration_drift(
+                predictions_df
+            )
+
+        # 4b. Calibration quality (ECE, slope/intercept, Brier decomposition)
+        if 'Actual_Recession' in predictions_df.columns:
+            report['checks']['calibration_quality'] = self.check_calibration_quality(
                 predictions_df
             )
 
@@ -318,6 +335,90 @@ class ModelMonitor:
                 'check': 'calibration',
                 'message': (f'Calibration gap: predicted mean={predicted_mean:.1%}, '
                             f'observed rate={observed_rate:.1%} over last {window} months')
+            })
+
+        return result
+
+    def check_calibration_quality(self, predictions_df: pd.DataFrame,
+                                  outcomes_col: str = 'Actual_Recession',
+                                  prob_col: str = 'Prob_Ensemble',
+                                  lookback_months: int = 60,
+                                  ece_threshold: float = 0.10) -> dict:
+        """ECE + calibration slope/intercept + Brier decomposition.
+
+        Computes diagnostics on the most recent ``lookback_months`` rows with a
+        known outcome (default: 5 years). Emits a WARNING if ECE exceeds
+        ``ece_threshold`` or if the calibration slope is strongly away from 1.
+        """
+        result = {'status': 'OK', 'details': {}}
+
+        if not HAS_CALIBRATION_DIAG:
+            result['status'] = 'SKIP'
+            result['details']['reason'] = 'calibration_diag module unavailable'
+            return result
+
+        if outcomes_col not in predictions_df.columns or prob_col not in predictions_df.columns:
+            result['status'] = 'SKIP'
+            result['details']['reason'] = (
+                f"Required columns missing: {outcomes_col}, {prob_col}"
+            )
+            return result
+
+        df = predictions_df.dropna(subset=[outcomes_col, prob_col]).copy()
+        if df.empty:
+            result['status'] = 'SKIP'
+            result['details']['reason'] = 'no labeled predictions available'
+            return result
+
+        window_df = df.iloc[-lookback_months:]
+        y_true = window_df[outcomes_col].astype(float).values
+        y_prob = window_df[prob_col].astype(float).values
+
+        if len(y_true) < 12 or len(set(y_true.astype(int))) < 2:
+            result['status'] = 'SKIP'
+            result['details']['reason'] = (
+                'insufficient labeled history for ECE/slope diagnostics'
+            )
+            return result
+
+        ece_val = float(_ece(y_true, y_prob, n_bins=10))
+        slope, intercept = _slope_intercept(y_true, y_prob)
+        brier = _brier_decomp(y_true, y_prob, n_bins=10)
+
+        result['details'] = {
+            'window_months': int(len(window_df)),
+            'ece': round(ece_val, 4) if not np.isnan(ece_val) else None,
+            'calibration_slope': round(float(slope), 4) if not np.isnan(slope) else None,
+            'calibration_intercept': round(float(intercept), 4) if not np.isnan(intercept) else None,
+            'brier_reliability': round(brier['reliability'], 5),
+            'brier_resolution': round(brier['resolution'], 5),
+            'brier_uncertainty': round(brier['uncertainty'], 5),
+            'brier_total': round(brier['brier_total'], 5),
+            'ece_threshold': ece_threshold,
+        }
+
+        if not np.isnan(ece_val) and ece_val > ece_threshold:
+            result['status'] = 'WARNING'
+            self.alerts.append({
+                'level': 'WARNING',
+                'check': 'calibration_quality',
+                'message': (
+                    f'ECE={ece_val:.3f} over last {len(window_df)} months '
+                    f'exceeds threshold {ece_threshold:.2f}'
+                ),
+            })
+        # Extreme slope deviation is a secondary signal (e.g., slope<0.5 means
+        # overconfident predictions, >1.5 means underconfident).
+        if not np.isnan(slope) and (slope < 0.5 or slope > 1.5):
+            if result['status'] == 'OK':
+                result['status'] = 'WARNING'
+            self.alerts.append({
+                'level': 'INFO',
+                'check': 'calibration_quality',
+                'message': (
+                    f'Calibration slope={slope:.2f} indicates '
+                    f'{"overconfident" if slope < 1.0 else "underconfident"} probabilities'
+                ),
             })
 
         return result

@@ -474,14 +474,28 @@ def _train_model_bundle(*, df_final: pd.DataFrame, df_features: pd.DataFrame,
         model.decision_threshold = float(threshold_override)
         logger.info("%s applied threshold override: %.3f", label, model.decision_threshold)
 
-    ci_result = model.predict_with_confidence(test_df, n_bootstrap=200, ci_level=0.90)
+    ci_result = model.predict_with_confidence(
+        test_df,
+        n_bootstrap=200,
+        ci_level=0.90,
+        method="block_bootstrap",
+        block_size_months=12,
+        train_df=train_df,
+    )
     predictions = ci_result['predictions']
     metrics_df = model.evaluate(test_df, predictions)
 
     nowcast_ci = None
     nowcast_preds = None
     if len(nowcast_df) > 0:
-        nowcast_ci = model.predict_with_confidence(nowcast_df, n_bootstrap=200, ci_level=0.90)
+        nowcast_ci = model.predict_with_confidence(
+            nowcast_df,
+            n_bootstrap=200,
+            ci_level=0.90,
+            method="block_bootstrap",
+            block_size_months=12,
+            train_df=train_df,
+        )
         nowcast_preds = nowcast_ci['predictions']
         logger.info(
             "%s nowcast complete — latest probability: %.1f%%",
@@ -643,17 +657,46 @@ def _persist_model_bundle(*, bundle: dict, models_dir: Path, horizon_months: int
         json.dump(run_manifest, f, indent=2)
     logger.info("✓ Saved run manifest")
 
+    method_label = ci_result.get('method', 'dirichlet')
+    friendly_method = {
+        'stationary_block_bootstrap': 'Stationary block bootstrap (Politis-Romano)',
+        'dirichlet': 'Dirichlet weight perturbation',
+    }.get(method_label, method_label)
     with open(models_dir / "confidence_intervals.json", 'w') as f:
         json.dump({
             'ci_level': ci_result['ci_level'],
-            'n_bootstrap': 200,
-            'method': 'Dirichlet weight perturbation',
+            'n_bootstrap': int(ci_result.get('n_bootstrap', 200)),
+            'method': friendly_method,
+            'method_key': method_label,
+            'block_size_months': int(ci_result.get('block_size_months', 12)),
+            'empirical_coverage_on_backtest': None,
             'latest_ci_lower': float(ci_result['ensemble_ci_lower'][-1]),
             'latest_ci_upper': float(ci_result['ensemble_ci_upper'][-1]),
             'latest_model_spread': float(ci_result['model_spread'][-1]),
             'timestamp': datetime.now().isoformat(),
         }, f, indent=2)
-    logger.info("✓ Saved confidence interval metadata")
+    logger.info("✓ Saved confidence interval metadata (%s)", friendly_method)
+
+    # Persist calibration diagnostics (A1 experiment)
+    cal_diag = getattr(model, 'calibration_diagnostics', None) or {}
+    cal_choice = getattr(model, 'calibrator_choice', None) or {}
+    if cal_diag:
+        models_payload = {}
+        for name, entry in cal_diag.items():
+            entry_copy = dict(entry)
+            entry_copy.setdefault('winner', cal_choice.get(name, 'isotonic'))
+            models_payload[name] = entry_copy
+        with open(models_dir / "calibration_diagnostics.json", 'w') as f:
+            json.dump({
+                'generated_at_utc': datetime.utcnow().isoformat(),
+                'git_sha': _get_git_sha(),
+                'models': models_payload,
+            }, f, indent=2, default=str)
+        logger.info(
+            "✓ Saved calibration diagnostics (%d model(s), winners: %s)",
+            len(models_payload),
+            ", ".join(f"{n}={w}" for n, w in cal_choice.items()),
+        )
 
     report = model.generate_report(bundle['test_df'], bundle['predictions'])
     save_executive_report(report)

@@ -325,6 +325,135 @@ if saved_metrics is not None and not saved_metrics.empty:
         best_j = saved_metrics.loc[best_j_idx]
         st.success(f"**Best Youden's J:** {best_j['Model'].replace('_', ' ').title()} — {best_j['Youdens_J']:.4f}")
 
+# ── Calibration Diagnostics (A1) ──────────────────────────────────────────────
+st.markdown("---")
+st.markdown("### Calibration Diagnostics")
+st.markdown(
+    "*Reliability curves, ECE, calibration slope/intercept, and Brier "
+    "decomposition per model, plus the isotonic/sigmoid/beta A/B winner. "
+    "Source: `data/models/calibration_diagnostics.json`*"
+)
+
+cal_diag_file = DATA_DIR / "calibration_diagnostics.json"
+cal_diag = {}
+if cal_diag_file.exists():
+    try:
+        with open(cal_diag_file) as f:
+            cal_diag = json.load(f)
+    except Exception:
+        cal_diag = {}
+
+if not cal_diag or not cal_diag.get("models"):
+    st.info(
+        "Run `python -m scheduler.update_job` to populate calibration diagnostics."
+    )
+else:
+    cal_models = cal_diag.get("models", {})
+
+    # Reliability curve for ensemble
+    ensemble_entry = cal_models.get("ensemble", {})
+    reliability_raw = ensemble_entry.get("raw", {}).get("reliability", []) if ensemble_entry else []
+    if HAS_PLOTLY and reliability_raw:
+        bins = np.array(reliability_raw, dtype=float)
+        if bins.ndim == 2 and bins.shape[1] == 4:
+            rel_fig = go.Figure()
+            rel_fig.add_trace(
+                go.Scatter(
+                    x=[0.0, 1.0],
+                    y=[0.0, 1.0],
+                    mode="lines",
+                    line=dict(dash="dash", color="gray"),
+                    name="Perfect calibration",
+                    showlegend=True,
+                )
+            )
+            rel_fig.add_trace(
+                go.Scatter(
+                    x=bins[:, 2],
+                    y=bins[:, 1],
+                    mode="lines+markers",
+                    marker=dict(size=8),
+                    line=dict(color="#d62728"),
+                    name="Ensemble (raw CV)",
+                )
+            )
+            rel_fig.update_layout(
+                title="Ensemble reliability curve (quantile bins)",
+                xaxis_title="Mean predicted probability",
+                yaxis_title="Observed recession frequency",
+                xaxis=dict(range=[0, 1]),
+                yaxis=dict(range=[0, 1]),
+                template="plotly_white",
+                height=420,
+            )
+            st.plotly_chart(rel_fig, use_container_width=True)
+
+    # ECE per model (bar)
+    ece_rows = []
+    slope_rows = []
+    winner_rows = []
+    for name, entry in cal_models.items():
+        raw = entry.get("raw", {}) if isinstance(entry, dict) else {}
+        ece_rows.append({"Model": name, "ECE": raw.get("ece")})
+        slope_rows.append({
+            "Model": name,
+            "Slope": raw.get("slope"),
+            "Intercept": raw.get("intercept"),
+            "Brier_Total": raw.get("brier_total"),
+            "Brier_Reliability": raw.get("brier_reliability"),
+            "Brier_Resolution": raw.get("brier_resolution"),
+            "N_Samples": raw.get("n_samples"),
+        })
+        winner_rows.append({
+            "Model": name,
+            "Winner": entry.get("winner", "isotonic"),
+            "Isotonic_ECE": (entry.get("isotonic") or {}).get("ece"),
+            "Sigmoid_ECE": (entry.get("sigmoid") or {}).get("ece"),
+            "Beta_ECE": (entry.get("beta") or {}).get("ece"),
+        })
+
+    if HAS_PLOTLY and ece_rows:
+        ece_df_plot = pd.DataFrame(ece_rows).dropna()
+        if not ece_df_plot.empty:
+            ece_fig = go.Figure()
+            ece_fig.add_trace(
+                go.Bar(
+                    x=ece_df_plot["Model"].astype(str),
+                    y=ece_df_plot["ECE"].astype(float),
+                    text=[f"{v:.3f}" for v in ece_df_plot["ECE"].astype(float)],
+                    textposition="outside",
+                    marker_color="#1f77b4",
+                )
+            )
+            ece_fig.update_layout(
+                title="Expected Calibration Error (raw CV) per model",
+                yaxis_title="ECE (lower is better)",
+                template="plotly_white",
+                height=360,
+            )
+            st.plotly_chart(ece_fig, use_container_width=True)
+
+    slope_df = pd.DataFrame(slope_rows)
+    if not slope_df.empty:
+        st.markdown("**Slope / intercept & Brier decomposition**")
+        st.dataframe(slope_df, use_container_width=True, hide_index=True)
+
+    winner_df = pd.DataFrame(winner_rows)
+    if not winner_df.empty:
+        st.markdown("**Calibrator A/B (holdout ECE — winner per model)**")
+        st.dataframe(winner_df, use_container_width=True, hide_index=True)
+        st.caption(
+            "Measurement only — production calibrator stays isotonic until the "
+            "validator confirms a promotion on vintage origins."
+        )
+
+    generated = cal_diag.get("generated_at_utc", "")
+    git_sha = cal_diag.get("git_sha", "unknown")
+    st.caption(
+        f"Generated at {generated[:19]} UTC | Git SHA: `{git_sha}` | "
+        "CI coverage on backtest: (pending — populated by validator)"
+    )
+
 # ── Confusion Matrices ────────────────────────────────────────────────────────
 if 'Actual_Recession' in predictions_df.columns:
     st.markdown("---")
