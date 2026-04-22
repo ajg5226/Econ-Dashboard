@@ -3,6 +3,7 @@ Unit tests for ensemble model module
 """
 
 import unittest
+from unittest.mock import patch
 import pandas as pd
 import numpy as np
 from recession_engine.ensemble_model import RecessionEnsembleModel
@@ -58,6 +59,31 @@ class TestEnsembleModel(unittest.TestCase):
         self.assertIsInstance(features, list)
         self.assertLessEqual(len(features), 2)
         self.assertNotIn('RECESSION_FORWARD_12M', features)
+
+    def test_select_features_logs_ranker_failures(self):
+        dates = pd.date_range('2020-01-01', periods=200, freq='ME')
+        np.random.seed(0)
+        df = pd.DataFrame({
+            'feature1': np.random.randn(200),
+            'feature2': np.random.randn(200),
+            'feature3': np.random.randn(200),
+            'RECESSION_FORWARD_6M': np.random.randint(0, 2, 200),
+            'RECESSION': np.random.randint(0, 2, 200),
+        }, index=dates)
+
+        with patch(
+            'recession_engine.ensemble_model.RandomForestClassifier.fit',
+            side_effect=ValueError('rf failed'),
+        ), patch(
+            'recession_engine.ensemble_model.LogisticRegression.fit',
+            side_effect=ValueError('logit failed'),
+        ), self.assertLogs('recession_engine.ensemble_model', level='WARNING') as logs:
+            features = self.model.select_features(df, max_features=2)
+
+        self.assertIsInstance(features, list)
+        joined_logs = "\n".join(logs.output)
+        self.assertIn('Feature selection random-forest ranking failed', joined_logs)
+        self.assertIn('Feature selection sparse-logit ranking failed', joined_logs)
     
     def test_fit_and_predict(self):
         """Test model fitting and prediction"""
@@ -95,4 +121,3 @@ class TestEnsembleModel(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-

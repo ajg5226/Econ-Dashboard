@@ -7,7 +7,11 @@ Defines defaults and persistence helpers used by both:
 """
 
 import json
+import logging
+from datetime import date
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # Scheduler interval options
 SCHEDULER_INTERVALS = {
@@ -67,6 +71,13 @@ def get_scheduler_description(interval: str = 'weekly') -> str:
 
 def _validate_config(config: dict) -> dict:
     """Validate and normalize config values against supported ranges."""
+    if config is not None and not isinstance(config, dict):
+        logger.warning(
+            "Runtime config payload must be a JSON object, got %s; using defaults.",
+            type(config).__name__,
+        )
+        return DEFAULT_CONFIG.copy()
+
     validated = DEFAULT_CONFIG.copy()
     validated.update(config or {})
 
@@ -81,7 +92,17 @@ def _validate_config(config: dict) -> dict:
         validated['horizon_months'] = DEFAULT_CONFIG['horizon_months']
 
     train_end = validated.get('train_end_date')
-    validated['train_end_date'] = train_end if train_end else None
+    if train_end in ("", None):
+        validated['train_end_date'] = None
+    else:
+        try:
+            validated['train_end_date'] = date.fromisoformat(str(train_end).strip()).isoformat()
+        except (TypeError, ValueError):
+            logger.warning(
+                "Ignoring invalid train_end_date %r in runtime config; expected YYYY-MM-DD.",
+                train_end,
+            )
+            validated['train_end_date'] = None
 
     try:
         validated['max_features'] = int(validated.get('max_features', 50))
@@ -106,11 +127,23 @@ def load_runtime_config() -> dict:
     """Load persisted runtime config, merged with sane defaults."""
     if CONFIG_PATH.exists():
         try:
-            with open(CONFIG_PATH, 'r') as f:
+            with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
                 raw = json.load(f)
-            return _validate_config(raw)
-        except Exception:
+        except json.JSONDecodeError as exc:
+            logger.warning(
+                "Runtime config at %s is not valid JSON: %s. Using defaults.",
+                CONFIG_PATH,
+                exc,
+            )
             return DEFAULT_CONFIG.copy()
+        except OSError as exc:
+            logger.warning(
+                "Runtime config at %s could not be read: %s. Using defaults.",
+                CONFIG_PATH,
+                exc,
+            )
+            return DEFAULT_CONFIG.copy()
+        return _validate_config(raw)
     return DEFAULT_CONFIG.copy()
 
 
@@ -118,7 +151,6 @@ def save_runtime_config(config: dict) -> dict:
     """Validate and persist runtime config to disk."""
     validated = _validate_config(config)
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(CONFIG_PATH, 'w') as f:
+    with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
         json.dump(validated, f, indent=2)
     return validated
-

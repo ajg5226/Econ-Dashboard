@@ -10,7 +10,6 @@ import json
 import logging
 import platform
 import subprocess
-import traceback
 from pathlib import Path
 from datetime import datetime
 import pandas as pd
@@ -91,8 +90,24 @@ def _get_git_sha() -> str:
             cwd=str(Path(__file__).parent.parent),
             text=True
         ).strip()
-    except Exception:
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError) as exc:
+        logger.debug("Could not determine git SHA for run manifest: %s", exc)
         return "unknown"
+
+
+def _coerce_int(value, *, default: int, field_name: str, source: str) -> int:
+    """Convert an artifact value to int without letting malformed metadata abort the run."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid %s in %s (%r); using %s.",
+            field_name,
+            source,
+            value,
+            default,
+        )
+        return default
 
 
 def _build_run_manifest(*, horizon_months, train_end_date, max_features,
@@ -239,7 +254,15 @@ def _extract_ensemble_metrics(metrics_df: pd.DataFrame) -> dict:
     metrics = {}
     for field in fields:
         if field in ensemble_row.columns:
-            metrics[field] = float(ensemble_row[field].iloc[0])
+            raw_value = ensemble_row[field].iloc[0]
+            try:
+                metrics[field] = float(raw_value)
+            except (TypeError, ValueError):
+                logger.warning(
+                    "Skipping invalid incumbent ensemble metric %s=%r.",
+                    field,
+                    raw_value,
+                )
     return metrics
 
 
@@ -270,27 +293,41 @@ def _load_incumbent_snapshot(models_dir: Path) -> dict | None:
 
     try:
         metrics_df = pd.read_csv(metrics_path)
-    except Exception:
+    except (OSError, ValueError, pd.errors.EmptyDataError, pd.errors.ParserError) as exc:
+        logger.warning(
+            "Ignoring incumbent metrics snapshot at %s: %s",
+            metrics_path,
+            exc,
+        )
         return None
 
     ensemble_metrics = _extract_ensemble_metrics(metrics_df)
     if not ensemble_metrics:
+        logger.warning(
+            "Ignoring incumbent metrics snapshot at %s: ensemble metrics unavailable.",
+            metrics_path,
+        )
         return None
 
     manifest = {}
     manifest_path = models_dir / "run_manifest.json"
     if manifest_path.exists():
         try:
-            with open(manifest_path, 'r') as f:
+            with open(manifest_path, 'r', encoding='utf-8') as f:
                 manifest = json.load(f)
-        except Exception:
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning(
+                "Ignoring malformed incumbent run manifest at %s: %s",
+                manifest_path,
+                exc,
+            )
             manifest = {}
 
     selection = manifest.get('model_selection') or {}
     applied = selection.get('final_applied_config') or {}
     candidate_id = applied.get('candidate_id') or selection.get('candidate_id') or 'baseline_50'
     description = applied.get('description') or selection.get('description') or 'Current live incumbent'
-    n_cv_splits = int(
+    n_cv_splits = _coerce_int(
         manifest.get(
             'n_cv_splits',
             applied.get(
@@ -300,15 +337,32 @@ def _load_incumbent_snapshot(models_dir: Path) -> dict | None:
                     DEFAULT_SEARCH_CANDIDATE_MAP.get(candidate_id, {}).get('n_cv_splits', 5),
                 ),
             ),
-        )
+        ),
+        default=5,
+        field_name='n_cv_splits',
+        source=str(manifest_path),
     )
+    max_features = _coerce_int(
+        manifest.get('max_features', 50),
+        default=50,
+        field_name='max_features',
+        source=str(manifest_path),
+    )
+    model_config = _resolve_manifest_model_config(manifest)
+    if not isinstance(model_config, dict):
+        logger.warning(
+            "Invalid model_config in %s (%s); using empty config.",
+            manifest_path,
+            type(model_config).__name__,
+        )
+        model_config = {}
 
     return {
         'candidate_id': candidate_id,
         'description': description,
-        'max_features': int(manifest.get('max_features', 50)),
+        'max_features': max_features,
         'n_cv_splits': n_cv_splits,
-        'model_config': _resolve_manifest_model_config(manifest),
+        'model_config': model_config,
         'metrics': ensemble_metrics,
         'manifest': manifest,
     }
@@ -892,8 +946,7 @@ def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
                 logger.info("✓ Saved ALFRED vintage summary")
 
         except Exception as e:
-            logger.warning("Backtest failed (non-fatal): %s", e)
-            traceback.print_exc()
+            logger.warning("Backtest failed (non-fatal): %s", e, exc_info=True)
 
         # STEP 10: MODEL MONITORING
         logger.info("=" * 100)
@@ -923,7 +976,7 @@ def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
                 logger.info("✓ All monitoring checks passed (no alerts)")
 
         except Exception as e:
-            logger.warning("Model monitoring failed (non-fatal): %s", e)
+            logger.warning("Model monitoring failed (non-fatal): %s", e, exc_info=True)
 
         # FINAL SUMMARY
         logger.info("=" * 100)

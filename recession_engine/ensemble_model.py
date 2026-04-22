@@ -972,8 +972,12 @@ class RecessionEnsembleModel:
                 )
                 for rank, feat in enumerate(rf_ranked[:max_features * 2]):
                     feature_scores[feat] += weight * (1.5 / (rank + 1))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "Feature selection random-forest ranking failed on a %s-row window: %s",
+                    len(window_df),
+                    exc,
+                )
 
             try:
                 scaler = StandardScaler()
@@ -991,8 +995,12 @@ class RecessionEnsembleModel:
                 coef_series = coef_series[coef_series > 1e-6].sort_values(ascending=False)
                 for rank, feat in enumerate(coef_series.index.tolist()[:max_features * 2]):
                     feature_scores[feat] += weight * (2.0 / (rank + 1))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "Feature selection sparse-logit ranking failed on a %s-row window: %s",
+                    len(window_df),
+                    exc,
+                )
 
         if len(df_sub) > 0:
             _accumulate_rank_scores(df_sub, weight=1.0)

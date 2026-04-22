@@ -29,3 +29,6 @@ jobs:
 
       - name: Run tests
         run: python -m pytest tests -q
+
+      - name: Run synthetic self-test
+        run: python self_test.py
