@@ -107,6 +107,31 @@ def load_indicators() -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def save_glr_components(df: pd.DataFrame):
+    """Save GLR per-component z-scores sidecar to data/glr_components.csv."""
+    ensure_data_dir()
+    filepath = DATA_DIR / "glr_components.csv"
+    df.to_csv(filepath)
+    logger.info(f"Saved GLR components to {filepath}")
+
+
+def load_glr_components() -> pd.DataFrame:
+    """Load the GLR per-component z-score frame, or empty DataFrame if missing."""
+    filepath = DATA_DIR / "glr_components.csv"
+    if not filepath.exists():
+        logger.warning(f"GLR components file not found: {filepath}")
+        return pd.DataFrame()
+    try:
+        df = pd.read_csv(filepath, index_col=0)
+        if df.index.dtype == 'object':
+            df.index = pd.to_datetime(df.index, errors='coerce')
+            df = df[df.index.notna()]
+        return df
+    except Exception as e:
+        logger.error(f"Error loading GLR components from {filepath}: {str(e)}")
+        return pd.DataFrame()
+
+
 def save_executive_report(report_text: str):
     """
     Save executive report to text file

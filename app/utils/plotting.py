@@ -403,6 +403,137 @@ def plot_indicator_timeseries(
         height=400,
         template='plotly_white'
     )
-    
+
+    return fig
+
+
+GLR_COLORS = {
+    'GLR_GROWTH': '#1f77b4',
+    'GLR_LIQUIDITY': '#2ca02c',
+    'GLR_RISK_APPETITE': '#ff7f0e',
+}
+
+GLR_DISPLAY_NAMES = {
+    'GLR_GROWTH': 'Growth',
+    'GLR_LIQUIDITY': 'Liquidity',
+    'GLR_RISK_APPETITE': 'Risk Appetite',
+}
+
+
+def plot_glr_composites(
+    composites_df: pd.DataFrame,
+    recession_series: pd.Series = None,
+    show_bands: bool = True,
+    show_recession_shading: bool = True,
+    band_window: int = 60,
+):
+    """Three-line Plotly chart of the GLR composites with optional rolling
+    33rd/67th percentile bands and recession shading.
+
+    Args:
+        composites_df: DataFrame with columns GLR_GROWTH, GLR_LIQUIDITY,
+            GLR_RISK_APPETITE indexed by date.
+        recession_series: Optional 0/1 series aligned to composites_df.index
+            for shading NBER recession periods.
+        show_bands: Overlay low-opacity 33rd/67th-percentile bands.
+        show_recession_shading: Gray shade recession months.
+        band_window: Rolling window used for the percentile bands.
+    """
+    if not HAS_PLOTLY:
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots(figsize=(14, 6))
+        for col in ['GLR_GROWTH', 'GLR_LIQUIDITY', 'GLR_RISK_APPETITE']:
+            if col in composites_df.columns:
+                ax.plot(composites_df.index, composites_df[col],
+                        label=GLR_DISPLAY_NAMES[col],
+                        color=GLR_COLORS[col], linewidth=2)
+        ax.axhline(0.0, color='gray', linewidth=0.5, alpha=0.5)
+        ax.set_xlabel('Date')
+        ax.set_ylabel('z-score')
+        ax.set_title('GLR Composite Signals')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+        return fig
+
+    fig = go.Figure()
+
+    for col in ['GLR_GROWTH', 'GLR_LIQUIDITY', 'GLR_RISK_APPETITE']:
+        if col not in composites_df.columns:
+            continue
+        series = composites_df[col]
+        display = GLR_DISPLAY_NAMES[col]
+        color = GLR_COLORS[col]
+
+        if show_bands:
+            low = series.rolling(band_window, min_periods=12).quantile(0.33)
+            high = series.rolling(band_window, min_periods=12).quantile(0.67)
+            fig.add_trace(go.Scatter(
+                x=composites_df.index, y=high, mode='lines',
+                line=dict(width=0), showlegend=False, hoverinfo='skip',
+            ))
+            rgba = f"rgba({int(color[1:3], 16)}, {int(color[3:5], 16)}, {int(color[5:7], 16)}, 0.10)"
+            fig.add_trace(go.Scatter(
+                x=composites_df.index, y=low, mode='lines',
+                line=dict(width=0), fill='tonexty', fillcolor=rgba,
+                name=f'{display} 33–67% band', showlegend=False,
+                hoverinfo='skip',
+            ))
+
+        fig.add_trace(go.Scatter(
+            x=composites_df.index, y=series, mode='lines',
+            name=display,
+            line=dict(color=color, width=2.5),
+            hovertemplate=(
+                '<b>%s</b><br>Date: %%{x|%%Y-%%m}<br>'
+                'z-score: %%{y:+.2f}σ<extra></extra>' % display
+            ),
+        ))
+
+    fig.add_hline(y=0.0, line_color='gray', line_width=1, opacity=0.4)
+
+    if show_recession_shading and recession_series is not None:
+        mask = recession_series.fillna(0).astype(float) == 1
+        if mask.any():
+            shifted = mask.shift(1, fill_value=False)
+            starts = composites_df.index[mask & ~shifted]
+            ends = composites_df.index[~mask & shifted]
+            if len(starts) > len(ends):
+                ends = ends.append(pd.DatetimeIndex([composites_df.index[-1]]))
+            for start, end in zip(starts, ends):
+                fig.add_vrect(
+                    x0=start, x1=end + pd.DateOffset(months=1),
+                    fillcolor='gray', opacity=0.15, layer='below',
+                    line_width=0,
+                )
+
+    fig.update_layout(
+        title={'text': 'GLR Composite Signals (z-score)',
+               'x': 0.5, 'xanchor': 'center'},
+        xaxis_title='Date',
+        yaxis_title='z-score',
+        hovermode='x unified',
+        legend=dict(yanchor='top', y=0.99, xanchor='left', x=0.01),
+        height=500,
+        template='plotly_white',
+    )
+    return fig
+
+
+def plot_glr_sparkline(series: pd.Series, color: str = '#1f77b4'):
+    """Tiny Plotly line used in the drill-down grid. No axes, minimal chrome."""
+    if not HAS_PLOTLY:
+        return None
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=series.index, y=series.values, mode='lines',
+        line=dict(color=color, width=1.5), hoverinfo='skip',
+        showlegend=False,
+    ))
+    fig.update_layout(
+        height=120, margin=dict(l=4, r=4, t=4, b=4),
+        xaxis=dict(visible=False), yaxis=dict(visible=False),
+        template='plotly_white',
+    )
     return fig
 

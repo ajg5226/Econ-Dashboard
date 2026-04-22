@@ -40,12 +40,13 @@ if not os.environ.get('FRED_API_KEY'):
 from recession_engine.data_acquisition import RecessionDataAcquisition
 from recession_engine.backtester import DEFAULT_SEARCH_CANDIDATES, RecessionBacktester
 from recession_engine.ensemble_model import RecessionEnsembleModel
+from recession_engine.glr_engine import GLRRegimeEngine
 from recession_engine.model_monitor import ModelMonitor
 from scheduler.scheduler_config import load_runtime_config
 try:
     from app.utils.data_loader import (
         save_predictions, save_indicators, save_executive_report,
-        ensure_data_dir
+        save_glr_components, ensure_data_dir
     )
 except ImportError:
     import sys
@@ -53,7 +54,7 @@ except ImportError:
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from app.utils.data_loader import (
         save_predictions, save_indicators, save_executive_report,
-        ensure_data_dir
+        save_glr_components, ensure_data_dir
     )
 
 # Configure logging
@@ -723,8 +724,29 @@ def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
         df_features = acq.engineer_features(df_raw)
         logger.info("✓ Engineered %d total columns", df_features.shape[1])
 
-        # Save indicators WITH engineered features (needed by Indicators page)
-        save_indicators(df_features)
+        # Build GLR composites on a COPY so the ensemble training frame
+        # below stays free of GLR_* columns (otherwise feature selection
+        # could silently pick them up and truncate the training window).
+        try:
+            glr_result = GLRRegimeEngine().build(df_features)
+            save_glr_components(glr_result['components'])
+            df_indicators = df_features.copy()
+            for col in glr_result['composites'].columns:
+                df_indicators[col] = glr_result['composites'][col]
+            for col in glr_result['states'].columns:
+                df_indicators[col] = glr_result['states'][col]
+            logger.info(
+                "✓ GLR composites: %d months, %d composites, %d components",
+                len(glr_result['composites']),
+                glr_result['composites'].shape[1],
+                glr_result['components'].shape[1],
+            )
+        except Exception as e:
+            logger.warning("GLR engine failed, skipping composites: %s", e)
+            df_indicators = df_features
+
+        # Save indicators WITH engineered features + GLR composites
+        save_indicators(df_indicators)
 
         # STEP 3: CREATE TARGET
         logger.info("=" * 100)

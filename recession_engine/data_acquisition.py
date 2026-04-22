@@ -101,6 +101,23 @@ class RecessionDataAcquisition:
             'term_structure': {
                 'THREEFYTP10': 'Kim-Wright 10-Year Term Premium',
             },
+            # GLR monitor: Growth / Liquidity / Risk Appetite composites.
+            # Series here feed the standalone GLRRegimeEngine and land in
+            # indicators.csv as GLR_* columns. They are isolated from the
+            # recession ensemble's feature pool by scheduler/update_job.py.
+            'glr': {
+                'CUMFNS': 'Capacity Utilization: Manufacturing',
+                'M2SL': 'M2 Money Stock',
+                'WALCL': 'Fed Balance Sheet Total Assets',
+                'WTREGEN': 'Treasury General Account',
+                'RRPONTSYD': 'Overnight Reverse Repo',
+                'WLRRAL': 'Reserves of Depository Institutions',
+                'VIXCLS': 'VIX Close (30-day implied vol)',
+                'VXVCLS': '3-Month VIX',
+                'DTWEXBGS': 'Broad Trade-Weighted USD Index',
+                'PCOPPUSDM': 'Global Price of Copper (USD/t, monthly)',
+                'IQ12260': 'Export Price Index: Nonmonetary Gold (proxy for gold, monthly)',
+            },
             # Peer/reference models (for benchmarking, not used as features)
             'reference': {
                 'RECPROUSM156N': 'Chauvet-Piger Smoothed Recession Probabilities (NY Fed)',

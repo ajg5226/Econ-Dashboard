@@ -46,6 +46,16 @@ def load_indicators_cached() -> pd.DataFrame:
     return load_indicators()
 
 
+@st.cache_data(ttl=86400)  # Cache for 24 hours
+def load_glr_components_cached() -> pd.DataFrame:
+    """Load GLR per-component z-scores with 24-hour Streamlit caching."""
+    try:
+        from app.utils.data_loader import load_glr_components
+    except ImportError:
+        from utils.data_loader import load_glr_components
+    return load_glr_components()
+
+
 @st.cache_resource  # Cache until manual refresh
 def load_model_artifacts():
     """
