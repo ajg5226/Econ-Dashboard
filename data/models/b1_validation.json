@@ -1,7 +1,7 @@
 {
   "experiment_id": "B1",
   "ran_at_utc": "2026-04-23T16:00:42.160187Z",
-  "git_sha_current": "c1acaf25c25a04f6f0fb5f5f6c5cdc79df32f0c6",
+  "git_sha_current": "45ff7e61a160b9d9c3a1869308d409d30e759609",
   "at_risk_column_count": 45,
   "continuous_column_count": 402,
   "at_risk_column_list_sample": [
@@ -312,5 +312,8 @@
     "ensemble_pr_auc": 0.3558673469387755,
     "ensemble_brier": 0.04425397131793673,
     "note": "Baseline pickles scored on A1.5-pinned 134-row window. B1 variants use the full 80/20 split (~134 rows), so they are comparable but not identical windows."
-  }
+  },
+  "git_sha_at_run": "c1acaf25c25a04f6f0fb5f5f6c5cdc79df32f0c6",
+  "branch": "experiment/B1-at-risk-bakeoff",
+  "notes_for_validator": "Strict-vintage-search intentionally skipped to stay under 90-min budget. Backtest uses a 5-cutoff subset (Volcker I, S&L, Dot-com, GFC, COVID); Oil Crisis was excluded. CV PR-AUC for the ensemble is reported as the max CV PR-AUC across base models (probit/rf/xgb/ms) since the ensemble itself is not recorded in model.cv_results \u2014 this is a measurement proxy, not a true ensemble-CV score."
 }
