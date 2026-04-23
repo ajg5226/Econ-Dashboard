@@ -53,6 +53,7 @@ SUPPORTED_VARIANTS = (
     "hybrid",
     "pca_on_binarized",
     "hybrid_no_b2_labor",
+    "hybrid_no_b3_credit",
 )
 
 # B2 Tier-12 labor features. Dropping these from the engineered frame is the
@@ -189,6 +190,60 @@ def b2_labor_columns_present(df: pd.DataFrame) -> list:
 
 
 # ---------------------------------------------------------------------------
+# B3 credit-supply-block drop helper (for hybrid_no_b3_credit ablation)
+# ---------------------------------------------------------------------------
+
+# B3 engineered-feature names from Tier 13 of ``engineer_features``. Exact
+# names — if any feature is added under a new name, extend this list.
+B3_CREDIT_FEATURE_NAMES = (
+    # (a) SLOOS z-scores + composite
+    "SLOOS_CI_LARGE_Z", "SLOOS_CI_SMALL_Z", "SLOOS_CONSUMER_Z",
+    "SLOOS_DEMAND_Z", "SLOOS_COMPOSITE",
+    # (b) SLOOS tightening flags
+    "SLOOS_TIGHTENING_FLAG", "SLOOS_ACUTE_TIGHTENING",
+    # (c) Interactions
+    "T10Y3M_Z", "CREDIT_TIGHTEN_X_CURVE_INVERT", "EBP_X_SLOOS",
+    # (d) Non-financial credit-growth deceleration
+    "CREDIT_GROWTH_YOY", "CREDIT_GROWTH_DECEL",
+)
+
+# Raw B3 FRED series. Each raw series also generates the standard Tier-1
+# MoM/3M/6M/YoY/MA3/MA6/Vol6M transforms plus an optional _AT_RISK flag.
+B3_CREDIT_RAW_SERIES = (
+    "financial_DRTSCILM", "financial_DRTSCIS",
+    "financial_DRTSCLCC", "financial_DRSDCILM",
+    "financial_TOTALSL",
+)
+
+
+def _b3_credit_columns(columns: Iterable[str]) -> set:
+    """Return the set of B3 credit-supply-related columns present in ``columns``."""
+    cols = set(columns)
+    drop = set()
+
+    # 1. Engineered Tier-13 columns — exact names.
+    for name in B3_CREDIT_FEATURE_NAMES:
+        if name in cols:
+            drop.add(name)
+
+    # 2. Raw B3 series + standard Tier-1 transforms + at-risk flag.
+    for raw in B3_CREDIT_RAW_SERIES:
+        if raw in cols:
+            drop.add(raw)
+        for suffix in _STANDARD_TRANSFORM_SUFFIXES:
+            candidate = f"{raw}{suffix}"
+            if candidate in cols:
+                drop.add(candidate)
+
+    return drop
+
+
+def b3_credit_columns_present(df: pd.DataFrame) -> list:
+    """Public helper returning the sorted list of B3 columns in ``df``."""
+    return sorted(_b3_credit_columns(df.columns))
+
+
+# ---------------------------------------------------------------------------
 # PCA-on-binarized helper
 # ---------------------------------------------------------------------------
 
@@ -310,6 +365,19 @@ def apply_feature_variant(
         out = df[keep].copy()
         logger.info(
             "Variant hybrid_no_b2_labor: dropped %d B2 labor columns (%d total).",
+            len(drop_cols),
+            df.shape[1] - len(keep),
+        )
+        return out
+
+    if variant == "hybrid_no_b3_credit":
+        # Drop every B3-derived column (engineered + raw + standard transforms).
+        # Keeps existing ANFCI/EBP/NFCI/Baa as they were pre-B3.
+        drop_cols = _b3_credit_columns(df.columns)
+        keep = [c for c in df.columns if c not in drop_cols]
+        out = df[keep].copy()
+        logger.info(
+            "Variant hybrid_no_b3_credit: dropped %d B3 credit columns (%d total).",
             len(drop_cols),
             df.shape[1] - len(keep),
         )

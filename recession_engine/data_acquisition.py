@@ -97,11 +97,21 @@ class RecessionDataAcquisition:
                 'TEDRATE': 'TED Spread (3M LIBOR - 3M T-Bill)',
             },
             # Financial conditions (Chicago Fed) + credit spread proxies
+            # B3: SLOOS senior-loan-officer survey series + non-financial credit
+            # growth (1990+). SLOOS is quarterly (released ~2 weeks after quarter
+            # end) and interpolated monthly; see Tier 13 engineering below.
             'financial': {
                 'NFCI': 'Chicago Fed National Financial Conditions Index',
                 'ANFCI': 'Chicago Fed Adjusted NFCI',
                 'BAMLH0A0HYM2': 'ICE BofA US High Yield OAS',
                 'BAMLC0A0CM': 'ICE BofA US Corporate Master OAS',
+                # B3 — SLOOS tightening series (quarterly, 1990Q2+).
+                'DRTSCILM': 'SLOOS Net % Tightening C&I Large/Medium Firms',
+                'DRTSCIS': 'SLOOS Net % Tightening C&I Small Firms',
+                'DRTSCLCC': 'SLOOS Net % Tightening Consumer Credit Cards',
+                'DRSDCILM': 'SLOOS Net % Reporting Stronger C&I Demand Large/Medium',
+                # B3 — Non-financial credit growth (Chicago Fed TOTALSL, monthly).
+                'TOTALSL': 'Total Consumer Credit Outstanding',
             },
             # Housing & term structure (Grigoli-Sandri 2024, Ajello et al. 2022)
             'housing': {
@@ -188,7 +198,13 @@ class RecessionDataAcquisition:
         # Interpolate quarterly BEA series to monthly (linear interpolation)
         # These series (PRFI, PCDG, PNFI) are quarterly and would otherwise
         # have 2/3 NaN after monthly resampling, producing garbage pct_change.
-        quarterly_series = ['leading_PRFI', 'leading_PCDG', 'leading_PNFI']
+        # B3 adds the SLOOS series (DRTSCILM/DRTSCIS/DRTSCLCC/SUBLPDCILMN),
+        # which are quarterly (released ~2 weeks post-quarter).
+        quarterly_series = [
+            'leading_PRFI', 'leading_PCDG', 'leading_PNFI',
+            'financial_DRTSCILM', 'financial_DRTSCIS',
+            'financial_DRTSCLCC', 'financial_DRSDCILM',
+        ]
         for col in quarterly_series:
             if col in df.columns:
                 non_null = df[col].notna().sum()
@@ -599,6 +615,99 @@ class RecessionDataAcquisition:
 
             logger.info("  ✓ Cyclical vs acyclical employment mix (goods/services)")
 
+        # ── Tier 13: Credit-supply block upgrade (B3) ────────────────
+        # Chicago Fed ANFCI + Gilchrist-Zakrajsek EBP + Philly Fed 2026
+        # on SLOOS shocks all argue that credit-supply tightening is a
+        # leading recession signal. Existing pipeline has EBP_PROXY,
+        # NFCI, CREDIT_STRESS_INDEX — this tier adds:
+        #   (a) SLOOS z-scores + composite,
+        #   (b) SLOOS tightening flags,
+        #   (c) interactions of credit tightening with curve inversion
+        #       and EBP stress,
+        #   (d) non-financial credit-growth deceleration (TOTALSL).
+        # NOTE: SLOOS starts 1990Q2 — pre-1990 rows are NaN and handled
+        # gracefully via the 70%-non-null valid_cols gate.
+        sloos_ci_large_col = 'financial_DRTSCILM'
+        sloos_ci_small_col = 'financial_DRTSCIS'
+        sloos_consumer_col = 'financial_DRTSCLCC'
+        sloos_demand_col = 'financial_DRSDCILM'
+
+        def _expanding_z(series, min_periods=24):
+            mean = series.expanding(min_periods=min_periods).mean()
+            std = series.expanding(min_periods=min_periods).std().where(
+                lambda x: x > 1e-8, np.nan
+            )
+            return (series - mean) / std
+
+        tightening_z_parts = []
+
+        # (a) SLOOS z-scores on the three tightening series
+        if sloos_ci_large_col in df.columns:
+            z = _expanding_z(df[sloos_ci_large_col])
+            df_eng['SLOOS_CI_LARGE_Z'] = z
+            tightening_z_parts.append(z)
+
+            # (b) Tightening flags: raw cutoff (>10% net) and z-score (>1.5)
+            df_eng['SLOOS_TIGHTENING_FLAG'] = (
+                df[sloos_ci_large_col] > 10
+            ).astype(float)
+            df_eng['SLOOS_ACUTE_TIGHTENING'] = (z > 1.5).astype(float)
+
+        if sloos_ci_small_col in df.columns:
+            z = _expanding_z(df[sloos_ci_small_col])
+            df_eng['SLOOS_CI_SMALL_Z'] = z
+            tightening_z_parts.append(z)
+
+        if sloos_consumer_col in df.columns:
+            z = _expanding_z(df[sloos_consumer_col])
+            df_eng['SLOOS_CONSUMER_Z'] = z
+            tightening_z_parts.append(z)
+
+        # Demand is a leading counterpart: stronger demand = positive sign
+        # but we negate so that "weaker demand" z > 0 aligns with credit
+        # stress (same direction as tightening indicators).
+        if sloos_demand_col in df.columns:
+            z = _expanding_z(df[sloos_demand_col])
+            df_eng['SLOOS_DEMAND_Z'] = -z
+
+        # SLOOS composite — mean of the three tightening z-scores
+        if tightening_z_parts:
+            composite = pd.concat(tightening_z_parts, axis=1).mean(axis=1)
+            df_eng['SLOOS_COMPOSITE'] = composite
+
+        # (c) Interaction features
+        spread_z_col = 'leading_T10Y3M'  # raw curve (already in frame)
+        if 'SLOOS_CI_LARGE_Z' in df_eng.columns and spread_z_col in df.columns:
+            # Compute T10Y3M z-score on-the-fly if not already computed.
+            t10y3m_z = _expanding_z(df[spread_z_col])
+            df_eng['T10Y3M_Z'] = t10y3m_z
+            # Credit tightening AND curve inverting together — positive
+            # when BOTH SLOOS_CI_LARGE_Z high AND T10Y3M_Z negative.
+            df_eng['CREDIT_TIGHTEN_X_CURVE_INVERT'] = (
+                df_eng['SLOOS_CI_LARGE_Z'] * (-t10y3m_z)
+            )
+
+        if (
+            'SLOOS_CI_LARGE_Z' in df_eng.columns
+            and 'EBP_PROXY_Z' in df_eng.columns
+        ):
+            # EBP-implied credit pricing stress × bank-survey stress
+            df_eng['EBP_X_SLOOS'] = (
+                df_eng['EBP_PROXY_Z'] * df_eng['SLOOS_CI_LARGE_Z']
+            )
+
+        # (d) Non-financial credit-growth deceleration (TOTALSL)
+        credit_growth_col = 'financial_TOTALSL'
+        if credit_growth_col in df.columns:
+            credit_yoy = df[credit_growth_col].pct_change(12)
+            df_eng['CREDIT_GROWTH_YOY'] = credit_yoy
+            # Deceleration: YoY minus its 12-month-lagged value
+            df_eng['CREDIT_GROWTH_DECEL'] = (
+                credit_yoy - credit_yoy.shift(12)
+            )
+
+        logger.info("  ✓ Credit-supply block (B3): SLOOS + interactions")
+
         # ── Clean up ─────────────────────────────────────────────────
         # Replace inf values from pct_change (division by zero when indicators cross zero)
         df_eng = df_eng.replace([np.inf, -np.inf], np.nan)
@@ -627,6 +736,9 @@ class RecessionDataAcquisition:
             'financial_BAMLH0A0HYM2', 'financial_BAMLC0A0CM',
             'coincident_IURSA',  # Insured unemployment rate (SOS indicator)
             'coincident_UNEMPLOY',  # Level of unemployed persons (B2)
+            # B3: SLOOS tightening series — higher = more banks tightening =
+            # more credit stress. DRTSC* at-risk flags fire when net % tight.
+            'financial_DRTSCILM', 'financial_DRTSCIS', 'financial_DRTSCLCC',
         }
 
         at_risk = pd.DataFrame(index=df.index)

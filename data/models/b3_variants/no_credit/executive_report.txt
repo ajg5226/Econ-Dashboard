@@ -1,0 +1,44 @@
+================================================================================
+RECESSION PREDICTION ENGINE — EXECUTIVE REPORT
+Report Generated: 2026-04-23 15:36:17
+================================================================================
+
+RECESSION PROBABILITY — 6 MONTHS FORWARD
+As of: 2025-10-31
+Decision Threshold: 0.320 (optimized via calibrated training F1 with precision/recall tie-breaks)
+--------------------------------------------------------------------------------
+
+MODEL PREDICTIONS:
+  PROBIT              :  41.0%  (weight: 0.500)
+  RANDOM_FOREST       :  13.3%  (weight: 0.500)
+  XGBOOST             :  24.1%  (diagnostic only)
+  MARKOV_SWITCHING    :  44.1%  (diagnostic only)
+  ENSEMBLE            :  27.2%  (equal weight active)
+
+================================================================================
+SIGNAL: ELEVATED RISK — Approaching recession threshold
+
+================================================================================
+METHODOLOGY:
+  Models: L1-Probit, Random Forest (300 trees), XGBoost (400 rounds),
+          Markov-Switching (3-state TVTP Hamilton filter, isotonic calibrated)
+  Note: LSTM disabled — insufficient sample size for generalization
+  Preprocessing: PCA factor extraction (top 5 components augment features)
+  Class weighting: Balanced (accounts for ~12% recession base rate)
+  Calibration: Isotonic regression via time-series cross-validation
+  Ensemble: CV-gated forecast combination with shrinkage toward equal weights (active models: probit, random_forest)
+  Threshold: calibrated training F1 with precision/recall tie-breaks
+  Features: 50 selected from correlation + RF importance
+  Includes: At-risk transforms, Sahm Rule, SOS indicator,
+            term-premium-adjusted spread, near-term forward spread,
+            excess bond premium proxy, house price confirming indicator,
+            residential investment, consumer durables, sectoral divergence,
+            credit stress index, monetary policy stance interaction
+
+  References:
+  - Estrella & Mishkin (1998), Wright (2006), Sahm (2019)
+  - Billakanti & Shin (2025), Engstrom & Sharpe (2019)
+  - Gilchrist & Zakrajsek (2012), Raftery et al. (2010) [DMA]
+  - Ajello et al. (2022) [term premium], Grigoli & Sandri (2024) [house prices]
+  - Scavette & O'Trakoun (2025) [SOS], Leamer (2024) [res. investment]
+================================================================================

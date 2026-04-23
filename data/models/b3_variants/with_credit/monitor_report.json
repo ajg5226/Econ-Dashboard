@@ -1,0 +1,87 @@
+{
+  "timestamp": "2026-04-23T15:46:34.460301",
+  "checks": {
+    "prediction_stability": {
+      "status": "OK",
+      "details": {
+        "current_6m_vol": 0.0641,
+        "historical_mean_vol": 0.05,
+        "historical_max_vol": 0.3394,
+        "last_mom_change": 0.0313
+      }
+    },
+    "model_disagreement": {
+      "status": "WARNING",
+      "details": {
+        "current_spread": 0.3006,
+        "current_std": 0.1356,
+        "model_predictions": {
+          "Probit": 0.3006,
+          "RandomForest": 0.0,
+          "XGBoost": 0.0588,
+          "MarkovSwitching": 0.1961
+        },
+        "mean_historical_spread": 0.141,
+        "p95_historical_spread": 0.4563
+      }
+    },
+    "feature_drift": {
+      "status": "WARNING",
+      "details": {
+        "features_checked": 49,
+        "features_drifted": 36,
+        "mean_psi": 4.8069,
+        "max_psi": 10.9225,
+        "top_drifted": {
+          "RESIDENTIAL_INV_Z": 10.922,
+          "RESIDENTIAL_INV_YOY": 10.922,
+          "GOODS_DECLINE_FLAG": 10.315,
+          "AT_RISK_DIFFUSION_WEIGHTED": 9.266,
+          "leading_PRFI_MoM": 9.197
+        }
+      }
+    },
+    "calibration": {
+      "status": "WARNING",
+      "details": {
+        "window_months": 24,
+        "mean_predicted": 0.2388,
+        "observed_rate": 0.0,
+        "calibration_gap": 0.2388,
+        "observed_months": 18
+      }
+    },
+    "calibration_quality": {
+      "status": "SKIP",
+      "details": {
+        "reason": "insufficient labeled history for ECE/slope diagnostics"
+      }
+    },
+    "data_freshness": {
+      "status": "OK",
+      "details": {
+        "latest_date": "2026-04-30",
+        "days_old": -7
+      }
+    }
+  },
+  "alerts": [
+    {
+      "level": "WARNING",
+      "check": "model_disagreement",
+      "message": "High model disagreement: spread=30.1%. Models: Probit=30.1%, RandomForest=0.0%, XGBoost=5.9%, MarkovSwitching=19.6%"
+    },
+    {
+      "level": "WARNING",
+      "check": "feature_drift",
+      "message": "36 features show significant drift (PSI>0.2). Top: RESIDENTIAL_INV_Z=10.92, RESIDENTIAL_INV_YOY=10.92, GOODS_DECLINE_FLAG=10.32"
+    },
+    {
+      "level": "INFO",
+      "check": "calibration",
+      "message": "Calibration gap: predicted mean=23.9%, observed rate=0.0% over last 24 months"
+    }
+  ],
+  "alert_count": 3,
+  "status": "WARNING"
+}

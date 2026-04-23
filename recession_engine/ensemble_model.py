@@ -1129,6 +1129,9 @@ class RecessionEnsembleModel:
             'RESIDENTIAL_INV_YOY', 'SECTORAL_DIVERGENCE',
             # B2 labor deterioration block — 3 highest-signal features per plan
             'VU_RATIO_Z', 'QUITS_Z', 'GOODS_YoY_MINUS_SERV_YoY',
+            # B3 credit-supply block — SLOOS + ANFCI + credit×curve interaction
+            'SLOOS_CI_LARGE_Z', 'SLOOS_COMPOSITE',
+            'CREDIT_TIGHTEN_X_CURVE_INVERT', 'financial_ANFCI',
         ]
         priority_order = {feature: rank for rank, feature in enumerate(ranked_candidates)}
         protected = set()

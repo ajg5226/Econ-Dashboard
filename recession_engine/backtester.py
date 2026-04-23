@@ -92,6 +92,12 @@ PUBLICATION_LAGS = {
     'coincident_USGOOD': 1,      # BLS Current Employment Statistics
     'coincident_USSERV': 1,      # BLS Current Employment Statistics
     'coincident_UNEMPLOY': 1,    # BLS Employment Situation
+    # B3 credit-supply block additions (SLOOS + non-financial credit)
+    'financial_DRTSCILM': 1,     # SLOOS ~2 weeks after quarter end
+    'financial_DRTSCIS': 1,      # SLOOS small firms — same release
+    'financial_DRTSCLCC': 1,     # SLOOS consumer credit cards
+    'financial_DRSDCILM': 1,     # SLOOS demand expectations (Large/Medium)
+    'financial_TOTALSL': 1,      # Consumer credit outstanding (monthly, ~5 wk lag)
 }
 
 

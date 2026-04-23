@@ -1,0 +1,69 @@
+{
+  "ran_at_utc": "2026-04-23T19:35:15.923461Z",
+  "horizon_months": 6,
+  "max_features": 50,
+  "features_ablated": [
+    "SLOOS_ACUTE_TIGHTENING",
+    "SLOOS_TIGHTENING_FLAG",
+    "financial_ANFCI",
+    "financial_ANFCI_MA6"
+  ],
+  "baseline": {
+    "label": "hybrid (baseline)",
+    "cv_pr_auc": 0.9473199250090685,
+    "test_pr_auc": 0.2883771929824561,
+    "test_auc": 0.7322834645669292,
+    "test_brier": 0.058534044438412015,
+    "selected_feature_count": 50
+  },
+  "drops": {
+    "SLOOS_ACUTE_TIGHTENING": {
+      "label": "hybrid (drop=SLOOS_ACUTE_TIGHTENING)",
+      "cv_pr_auc": 0.9405284325600786,
+      "test_pr_auc": 0.2917154566744731,
+      "test_auc": 0.734533183352081,
+      "test_brier": 0.05605183863139587,
+      "selected_feature_count": 50,
+      "delta_cv_pr_auc": -0.006791492448989911,
+      "delta_test_pr_auc": 0.0033382636920169517,
+      "delta_test_auc": 0.0022497187851517886,
+      "delta_test_brier": -0.0024822058070161426
+    },
+    "SLOOS_TIGHTENING_FLAG": {
+      "label": "hybrid (drop=SLOOS_TIGHTENING_FLAG)",
+      "cv_pr_auc": 0.9414545576650034,
+      "test_pr_auc": 0.1162046908315565,
+      "test_auc": 0.5641169853768279,
+      "test_brier": 0.048418656716417915,
+      "selected_feature_count": 50,
+      "delta_cv_pr_auc": -0.0058653673440650644,
+      "delta_test_pr_auc": -0.17217250215089963,
+      "delta_test_auc": -0.1681664791901013,
+      "delta_test_brier": -0.0101153877219941
+    },
+    "financial_ANFCI": {
+      "label": "hybrid (drop=financial_ANFCI)",
+      "cv_pr_auc": 0.9480079655807738,
+      "test_pr_auc": 0.23051073118623602,
+      "test_auc": 0.7058492688413948,
+      "test_brier": 0.05930044933022987,
+      "selected_feature_count": 50,
+      "delta_cv_pr_auc": 0.0006880405717053506,
+      "delta_test_pr_auc": -0.0578664617962201,
+      "delta_test_auc": -0.026434195725534404,
+      "delta_test_brier": 0.000766404891817854
+    },
+    "financial_ANFCI_MA6": {
+      "label": "hybrid (drop=financial_ANFCI_MA6)",
+      "cv_pr_auc": 0.9471115598396355,
+      "test_pr_auc": 0.22836508157211716,
+      "test_auc": 0.6940382452193475,
+      "test_brier": 0.05852520161955489,
+      "selected_feature_count": 50,
+      "delta_cv_pr_auc": -0.0002083651694330113,
+      "delta_test_pr_auc": -0.060012111410338964,
+      "delta_test_auc": -0.03824521934758163,
+      "delta_test_brier": -8.842818857122958e-06
+    }
+  }
+}

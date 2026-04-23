@@ -1,0 +1,41 @@
+{
+  "generated_at_utc": "2026-04-23T19:48:41.988447Z",
+  "baseline_artifacts_dir": "data/models/baseline_8df6b9d",
+  "baseline_git_sha": "8df6b9d",
+  "scored_on_feature_frame": "post-B3 (B3 features in df, but baseline only uses its original 50)",
+  "test_window_rows": 134,
+  "test_window_dates": [
+    "2014-09-30",
+    "2025-10-31"
+  ],
+  "test_recession_rate": 0.05223880597014925,
+  "baseline_weights_used": {
+    "probit": 0.5,
+    "random_forest": 0.5
+  },
+  "missing_features_count": 0,
+  "missing_features_sample": [],
+  "per_model": {
+    "probit": {
+      "auc": 0.8638920134983127,
+      "pr_auc": 0.4526306402710897,
+      "brier": 0.03929467584177722
+    },
+    "random_forest": {
+      "auc": 0.5421822272215973,
+      "pr_auc": 0.19197195838986883,
+      "brier": 0.05499368635936365
+    },
+    "xgboost": {
+      "auc": 0.5393700787401574,
+      "pr_auc": 0.12217304411779425,
+      "brier": 0.056982734628914254
+    }
+  },
+  "ensemble": {
+    "auc": 0.7750281214848144,
+    "pr_auc": 0.3660618577955168,
+    "brier": 0.044145880868918345
+  },
+  "notes": "Pinned baseline_8df6b9d pickles scored on the post-B3 feature frame's last 134 labeled rows. Isolates the code delta (B3 features added) from retraining variance: the baseline doesn't actually use B3 features, so this should be nearly identical to the at-freeze metrics unless the shared feature space subtly changed."
+}
