@@ -42,6 +42,12 @@ from recession_engine.backtester import DEFAULT_SEARCH_CANDIDATES, RecessionBack
 from recession_engine.ensemble_model import RecessionEnsembleModel
 from recession_engine.glr_engine import GLRRegimeEngine
 from recession_engine.model_monitor import ModelMonitor
+from recession_engine.feature_variants import (
+    SUPPORTED_VARIANTS,
+    apply_feature_variant,
+    describe_classification,
+    must_include_collisions,
+)
 from scheduler.scheduler_config import load_runtime_config
 try:
     from app.utils.data_loader import (
@@ -578,8 +584,15 @@ def _train_model_bundle(*, df_final: pd.DataFrame, df_features: pd.DataFrame,
 
 
 def _persist_model_bundle(*, bundle: dict, models_dir: Path, horizon_months: int,
-                          train_end_date, threshold_override, selection_metadata=None):
-    """Persist trained model outputs to the canonical production artifact paths."""
+                          train_end_date, threshold_override, selection_metadata=None,
+                          skip_global_saves: bool = False):
+    """Persist trained model outputs to the canonical production artifact paths.
+
+    ``skip_global_saves`` — when True, omit the ``save_predictions`` /
+    ``save_executive_report`` calls that write to the fixed ``data/`` paths
+    used by the dashboard. Used by B1 variant runs so experiment artifacts
+    never overwrite the live predictions.csv / executive_report.txt.
+    """
     model = bundle['model']
     metrics_df = bundle['metrics_df']
     predictions_df = bundle['predictions_df']
@@ -635,7 +648,13 @@ def _persist_model_bundle(*, bundle: dict, models_dir: Path, horizon_months: int
     metrics_df.to_csv(models_dir / "metrics.csv", index=False)
     logger.info("✓ Saved evaluation metrics")
 
-    save_predictions(predictions_df, bundle['test_df'])
+    # Also mirror predictions under the variant models_dir for audit parity.
+    predictions_df.to_csv(models_dir / "predictions.csv", index=False)
+
+    if not skip_global_saves:
+        save_predictions(predictions_df, bundle['test_df'])
+    else:
+        logger.info("  Skipping global save_predictions (variant run).")
 
     if rolling_metrics_df is not None and not rolling_metrics_df.empty:
         rolling_metrics_df.to_csv(models_dir / "rolling_metrics.csv", index=False)
@@ -719,13 +738,22 @@ def _persist_model_bundle(*, bundle: dict, models_dir: Path, horizon_months: int
         )
 
     report = model.generate_report(bundle['test_df'], bundle['predictions'])
-    save_executive_report(report)
-    logger.info("✓ Saved executive report")
+    # Always mirror the report under the variant models_dir for audit parity.
+    try:
+        (models_dir / "executive_report.txt").write_text(report)
+    except OSError as exc:
+        logger.warning("Could not write executive_report.txt into %s: %s", models_dir, exc)
+    if not skip_global_saves:
+        save_executive_report(report)
+        logger.info("✓ Saved executive report")
+    else:
+        logger.info("  Skipping global save_executive_report (variant run).")
 
 
 def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
                    threshold_override=None, strict_vintage_search=False,
-                   search_only=False):
+                   search_only=False, feature_variant="hybrid",
+                   variant_output_dir=None):
     """
     Main update job function
 
@@ -737,6 +765,10 @@ def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
         threshold_override: Optional manual decision threshold override in [0, 1]
         strict_vintage_search: If True, run strict real-time candidate selection first
         search_only: If True, persist search outputs and exit without final retraining
+        feature_variant: B1 bake-off variant name. ``'hybrid'`` preserves current behavior.
+        variant_output_dir: Optional override for the models output directory.
+            When set, artifacts are written to this directory instead of the production
+            ``data/models/`` path — used by the B1 harness to isolate variant runs.
     """
     runtime_config = load_runtime_config()
     horizon_months = runtime_config['horizon_months'] if horizon_months is None else horizon_months
@@ -748,13 +780,16 @@ def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
     logger.info("SCHEDULER UPDATE JOB STARTED (v2 — literature-informed)")
     logger.info(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info(
-        "Config | horizon=%s train_end=%s max_features=%s threshold_override=%s strict_vintage_search=%s search_only=%s",
+        "Config | horizon=%s train_end=%s max_features=%s threshold_override=%s "
+        "strict_vintage_search=%s search_only=%s feature_variant=%s variant_output_dir=%s",
         horizon_months,
         train_end_date,
         max_features,
         threshold_override,
         strict_vintage_search,
         search_only,
+        feature_variant,
+        variant_output_dir,
     )
     logger.info("=" * 100)
 
@@ -787,6 +822,27 @@ def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
         df_features = acq.engineer_features(df_raw)
         logger.info("✓ Engineered %d total columns", df_features.shape[1])
 
+        # B1 — apply feature-variant filter to the training feature frame.
+        # The filter is a no-op for 'hybrid' (the production default).
+        variant_name = feature_variant or "hybrid"
+        if variant_name != "hybrid":
+            pre_cols = df_features.shape[1]
+            df_features = apply_feature_variant(df_features, variant_name)
+            logger.info(
+                "✓ Applied feature variant '%s': %d → %d columns",
+                variant_name,
+                pre_cols,
+                df_features.shape[1],
+            )
+            missing_must_include = must_include_collisions(df_features)
+            if missing_must_include:
+                logger.warning(
+                    "Feature variant '%s' drops %d must-include canonical features: %s",
+                    variant_name,
+                    len(missing_must_include),
+                    missing_must_include,
+                )
+
         # Build GLR composites on a COPY so the ensemble training frame
         # below stays free of GLR_* columns (otherwise feature selection
         # could silently pick them up and truncate the training window).
@@ -808,8 +864,16 @@ def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
             logger.warning("GLR engine failed, skipping composites: %s", e)
             df_indicators = df_features
 
-        # Save indicators WITH engineered features + GLR composites
-        save_indicators(df_indicators)
+        # Save indicators WITH engineered features + GLR composites — but only
+        # for the production 'hybrid' variant so the dashboard is never touched
+        # by a B1 experiment run.
+        if variant_name == "hybrid":
+            save_indicators(df_indicators)
+        else:
+            logger.info(
+                "Variant run ('%s'): skipping save_indicators to keep dashboard frame untouched.",
+                variant_name,
+            )
 
         # STEP 3: CREATE TARGET
         logger.info("=" * 100)
@@ -819,7 +883,10 @@ def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
         df_final = acq.create_forecast_target(df_features, horizon_months=horizon_months)
 
         ensure_data_dir()
-        models_dir = Path(__file__).parent.parent / "data" / "models"
+        if variant_output_dir:
+            models_dir = Path(variant_output_dir)
+        else:
+            models_dir = Path(__file__).parent.parent / "data" / "models"
         models_dir.mkdir(parents=True, exist_ok=True)
 
         incumbent_snapshot = _load_incumbent_snapshot(models_dir)
@@ -986,6 +1053,7 @@ def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
             train_end_date=train_end_date,
             threshold_override=threshold_override,
             selection_metadata=selection_metadata,
+            skip_global_saves=(variant_name != "hybrid"),
         )
 
         # STEP 9: PSEUDO OUT-OF-SAMPLE BACKTEST
@@ -1130,6 +1198,13 @@ if __name__ == "__main__":
                         help="Run strict real-time candidate selection before final training")
     parser.add_argument("--search-only", action="store_true",
                         help="Persist strict vintage search artifacts and exit without retraining")
+    parser.add_argument("--feature-variant", type=str, default="hybrid",
+                        choices=list(SUPPORTED_VARIANTS),
+                        help=("Feature representation variant (B1 bake-off). "
+                              "'hybrid' reproduces production behavior."))
+    parser.add_argument("--variant-output-dir", type=str, default=None,
+                        help=("Optional override for models output directory — used by "
+                              "the B1 variant harness to avoid clobbering production artifacts."))
 
     args = parser.parse_args()
 
@@ -1140,6 +1215,8 @@ if __name__ == "__main__":
         threshold_override=args.threshold_override,
         strict_vintage_search=args.strict_vintage_search,
         search_only=args.search_only,
+        feature_variant=args.feature_variant,
+        variant_output_dir=args.variant_output_dir,
     )
 
     sys.exit(0 if success else 1)
