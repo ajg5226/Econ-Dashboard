@@ -3,31 +3,42 @@
   "git_sha_at_freeze": "ed24542f03ffadd0ab7d8c5061d056eefe0b839",
   "frozen_at_utc": "2026-04-22T20:00:00Z",
   "target_horizon_months": 6,
+  "evaluation_scope_policy": {
+    "adopted_at_utc": "2026-04-23T16:00:00Z",
+    "adopted_after_experiment": "B2/B2.5",
+    "policy": "1990-present is the PRIMARY evaluation window. Pre-1990 origins (Oil Crisis, Volcker I, Volcker II, 1978/1986 expansion checks) are retained as INFORMATIONAL — they report in all validation JSONs but do NOT drive KEEP/DISCARD verdicts. Training still uses full history (evaluation-only scope, not training-scope).",
+    "rationale": "Recurring pattern across A1/A1.75/B2/B2.5: modern-era optimization destabilizes pre-1990 detection. Pre-1990 macro regime (Volcker disinflation, 40% goods-producing employment share, pre-financial-innovation) is materially different from the regime the dashboard actually forecasts in. Optimizing for 1981 is museum work.",
+    "in_scope_origin_count": 10,
+    "informational_origin_count": 5,
+    "in_scope_positive_recessions": ["S&L 1990-02", "Dot-com 2000-10", "GFC 2007-07", "COVID 2019-09"],
+    "informational_positive_recessions": ["Oil Crisis 1973-06", "Volcker I 1979-08", "Volcker II 1981-02"],
+    "gate_thresholds_adjustment": "Smaller in-scope sample (~45 positive months vs full ~85) widens small-sample variance. Future experiments may widen CV-PR-AUC improvement gate slightly (e.g., 1.5pp instead of 2pp) — document per-experiment."
+  },
   "origins": [
-    {"date": "1973-06", "label": "Oil Crisis (positive window)", "kind": "positive"},
-    {"date": "1979-08", "label": "Volcker I (positive window)", "kind": "positive"},
-    {"date": "1981-02", "label": "Volcker II (positive window)", "kind": "positive"},
-    {"date": "1990-02", "label": "S&L (positive window)", "kind": "positive"},
-    {"date": "2000-10", "label": "Dot-com (positive window)", "kind": "positive"},
-    {"date": "2007-07", "label": "GFC (positive window)", "kind": "positive"},
-    {"date": "2019-09", "label": "COVID (positive window)", "kind": "positive"},
-    {"date": "1978-06", "label": "Expansion check (late 1970s)", "kind": "expansion"},
-    {"date": "1986-06", "label": "Expansion check (mid 1980s)", "kind": "expansion"},
-    {"date": "1995-06", "label": "Expansion check (mid 1990s)", "kind": "expansion"},
-    {"date": "1998-06", "label": "Expansion check (late 1990s)", "kind": "expansion"},
-    {"date": "2004-06", "label": "Expansion check (mid 2000s)", "kind": "expansion"},
-    {"date": "2014-06", "label": "Expansion check (mid 2010s)", "kind": "expansion"},
-    {"date": "2017-06", "label": "Expansion check (late 2010s)", "kind": "expansion"},
-    {"date": "2023-06", "label": "Expansion check (recent cycle)", "kind": "expansion"}
+    {"date": "1973-06", "label": "Oil Crisis (positive window)", "kind": "positive", "evaluation_scope": "informational"},
+    {"date": "1979-08", "label": "Volcker I (positive window)", "kind": "positive", "evaluation_scope": "informational"},
+    {"date": "1981-02", "label": "Volcker II (positive window)", "kind": "positive", "evaluation_scope": "informational"},
+    {"date": "1990-02", "label": "S&L (positive window)", "kind": "positive", "evaluation_scope": "in_scope"},
+    {"date": "2000-10", "label": "Dot-com (positive window)", "kind": "positive", "evaluation_scope": "in_scope"},
+    {"date": "2007-07", "label": "GFC (positive window)", "kind": "positive", "evaluation_scope": "in_scope"},
+    {"date": "2019-09", "label": "COVID (positive window)", "kind": "positive", "evaluation_scope": "in_scope"},
+    {"date": "1978-06", "label": "Expansion check (late 1970s)", "kind": "expansion", "evaluation_scope": "informational"},
+    {"date": "1986-06", "label": "Expansion check (mid 1980s)", "kind": "expansion", "evaluation_scope": "informational"},
+    {"date": "1995-06", "label": "Expansion check (mid 1990s)", "kind": "expansion", "evaluation_scope": "in_scope"},
+    {"date": "1998-06", "label": "Expansion check (late 1990s)", "kind": "expansion", "evaluation_scope": "in_scope"},
+    {"date": "2004-06", "label": "Expansion check (mid 2000s)", "kind": "expansion", "evaluation_scope": "in_scope"},
+    {"date": "2014-06", "label": "Expansion check (mid 2010s)", "kind": "expansion", "evaluation_scope": "in_scope"},
+    {"date": "2017-06", "label": "Expansion check (late 2010s)", "kind": "expansion", "evaluation_scope": "in_scope"},
+    {"date": "2023-06", "label": "Expansion check (recent cycle)", "kind": "expansion", "evaluation_scope": "in_scope"}
   ],
   "nber_recessions": [
-    {"peak": "1973-11", "trough": "1975-03", "name": "Oil Crisis"},
-    {"peak": "1980-01", "trough": "1980-07", "name": "Volcker I"},
-    {"peak": "1981-07", "trough": "1982-11", "name": "Volcker II"},
-    {"peak": "1990-07", "trough": "1991-03", "name": "S&L Crisis"},
-    {"peak": "2001-03", "trough": "2001-11", "name": "Dot-com"},
-    {"peak": "2007-12", "trough": "2009-06", "name": "Great Financial Crisis"},
-    {"peak": "2020-02", "trough": "2020-04", "name": "COVID"}
+    {"peak": "1973-11", "trough": "1975-03", "name": "Oil Crisis", "evaluation_scope": "informational"},
+    {"peak": "1980-01", "trough": "1980-07", "name": "Volcker I", "evaluation_scope": "informational"},
+    {"peak": "1981-07", "trough": "1982-11", "name": "Volcker II", "evaluation_scope": "informational"},
+    {"peak": "1990-07", "trough": "1991-03", "name": "S&L Crisis", "evaluation_scope": "in_scope"},
+    {"peak": "2001-03", "trough": "2001-11", "name": "Dot-com", "evaluation_scope": "in_scope"},
+    {"peak": "2007-12", "trough": "2009-06", "name": "Great Financial Crisis", "evaluation_scope": "in_scope"},
+    {"peak": "2020-02", "trough": "2020-04", "name": "COVID", "evaluation_scope": "in_scope"}
   ],
   "baseline_artifacts_dir": "data/models/baseline_ed24542/",
   "baseline_artifacts_git_sha": "ed24542",
@@ -51,11 +62,13 @@
     "ci_level": 0.9,
     "ece": null,
     "calibration_slope": null,
-    "calibration_intercept": null
+    "calibration_intercept": null,
+    "metrics_scope_note": "Baseline metrics above are computed on full-history origins (pre-adoption of 1990-present scope policy). Future experiment validation JSONs should report per-scope metrics: full-history (for backward compat) AND in_scope-only (for gate decisions)."
   },
   "notes": [
     "Plan originally said 13 origins; actual count in backtester is 15 (7 positive + 8 expansion).",
     "ECE + calibration slope/intercept are unmeasured at freeze; they become new metrics after A1 ships.",
-    "Oil Crisis (1972-11 training cutoff) currently fails with single-class error; keep in set as negative diagnostic."
+    "Oil Crisis (1972-11 training cutoff) currently fails with single-class error; keep in set as negative diagnostic.",
+    "2026-04-23: evaluation_scope policy added. Pre-1990 origins become informational; post-1990 drives gate decisions. Training window unchanged (full history)."
   ]
 }
