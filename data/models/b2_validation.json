@@ -1,7 +1,7 @@
 {
   "experiment_id": "B2",
   "ran_at_utc": "2026-04-23T16:57:36.163772Z",
-  "git_sha_current": "a4e0d899663a212d352335aa4a6c6b81286b714a",
+  "git_sha_current": "97e7b9b",
   "branch": "experiment/B2-labor-block",
   "parent_branch": "experiment/B1-at-risk-bakeoff",
   "new_series_added": [
@@ -202,5 +202,5 @@
     "pre_2000_safety_gate": "PASS (JOLTS features excluded by valid_cols gate; pipeline ran end-to-end)"
   },
   "blockers": [],
-  "notes_for_validator": "This B2 run sat on the experiment/B1-at-risk-bakeoff base (B1 hybrid default not promoted to main but infra reused). Ensemble CV PR-AUC uses max-of-base proxy convention inherited from B1. All artifacts per variant under data/models/b2_variants/{no_labor,with_labor,drop_ablation.json}."
+  "notes_for_validator": "This B2 run sat on the experiment/B1-at-risk-bakeoff base (B1 hybrid default not promoted to main but infra reused). Ensemble CV PR-AUC uses max-of-base proxy convention inherited from B1. All artifacts per variant under data/models/b2_variants/{no_labor,with_labor,drop_ablation.json}. Committed at 97e7b9b on branch experiment/B2-labor-block; parent experiment/B1-at-risk-bakeoff@a4e0d89."
 }
