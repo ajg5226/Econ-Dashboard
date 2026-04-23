@@ -84,6 +84,14 @@ PUBLICATION_LAGS = {
     'leading_PRFI': 2,           # BEA quarterly, interpolated monthly — ~2 month lag
     'leading_PCDG': 1,           # BEA personal consumption — ~1 month lag
     'leading_PNFI': 2,           # BEA quarterly, interpolated monthly — ~2 month lag
+    # B2 labor block additions
+    'coincident_JTSJOL': 2,      # JOLTS openings — ~6 week release cadence
+    'coincident_JTSQUR': 2,      # JOLTS quits rate — ~6 week release cadence
+    'coincident_CIVPART': 1,     # BLS Employment Situation
+    'coincident_EMRATIO': 1,     # BLS Employment Situation
+    'coincident_USGOOD': 1,      # BLS Current Employment Statistics
+    'coincident_USSERV': 1,      # BLS Current Employment Statistics
+    'coincident_UNEMPLOY': 1,    # BLS Employment Situation
 }
 
 

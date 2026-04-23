@@ -865,14 +865,20 @@ def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
             df_indicators = df_features
 
         # Save indicators WITH engineered features + GLR composites — but only
-        # for the production 'hybrid' variant so the dashboard is never touched
-        # by a B1 experiment run.
-        if variant_name == "hybrid":
+        # for true production runs (hybrid variant AND no variant_output_dir).
+        # Any run with an explicit variant_output_dir is an experiment and must
+        # not clobber the live dashboard data frame, even if it happens to use
+        # the hybrid variant. (B2 extends hybrid itself, so we can no longer
+        # use variant_name alone to decide this.)
+        is_experiment_run = variant_output_dir is not None
+        if variant_name == "hybrid" and not is_experiment_run:
             save_indicators(df_indicators)
         else:
             logger.info(
-                "Variant run ('%s'): skipping save_indicators to keep dashboard frame untouched.",
+                "Experiment run (variant='%s', variant_output_dir=%s): "
+                "skipping save_indicators to keep dashboard frame untouched.",
                 variant_name,
+                variant_output_dir,
             )
 
         # STEP 3: CREATE TARGET
@@ -1053,7 +1059,10 @@ def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
             train_end_date=train_end_date,
             threshold_override=threshold_override,
             selection_metadata=selection_metadata,
-            skip_global_saves=(variant_name != "hybrid"),
+            # Any run with a custom output dir (B1/B2 experiments) must skip
+            # global saves regardless of variant name — B2 now extends hybrid
+            # itself so variant_name alone can no longer decide this.
+            skip_global_saves=(variant_name != "hybrid" or variant_output_dir is not None),
         )
 
         # STEP 9: PSEUDO OUT-OF-SAMPLE BACKTEST

@@ -75,6 +75,15 @@ class RecessionDataAcquisition:
                 'CMRMTSPL': 'Real Manufacturing Sales',
                 # Scavette & O'Trakoun (2025): insured unemployment rate
                 'IURSA': 'Insured Unemployment Rate (SA)',
+                # B2: Labor deterioration block (Richmond Fed SOS + Philly Fed
+                # max-employment + sectoral divergence literature)
+                'JTSJOL': 'JOLTS Job Openings',                   # 2000+, V/U gap
+                'JTSQUR': 'JOLTS Quits Rate',                     # 2000+, quits signal
+                'CIVPART': 'Civilian Labor Force Participation Rate',  # 1948+
+                'EMRATIO': 'Employment-Population Ratio',          # 1948+
+                'USGOOD': 'All Employees: Goods-Producing',        # 1939+, cyclical
+                'USSERV': 'All Employees: Service-Providing',      # 1939+, less cyclical
+                'UNEMPLOY': 'Unemployed Persons (thousands)',      # 1948+, V/U gap
             },
             'lagging': {
                 'UEMPMEAN': 'Avg Unemployment Duration',
@@ -494,6 +503,102 @@ class RecessionDataAcquisition:
 
             logger.info("  ✓ Sectoral divergence features (capex vs employment)")
 
+        # ── Tier 12: Labor deterioration block (B2) ──────────────────
+        # Adds: vacancy/unemployment gap (JOLTS), quits-rate signal,
+        # participation gap, employment-to-population gap, and cyclical
+        # vs acyclical (goods vs services) mix.
+        # Rationale — Richmond Fed SOS + Phil Fed max-employment +
+        # sectoral-divergence literature shows Sahm + SOS alone miss
+        # signal available in JOLTS, CIVPART, EMRATIO, and the
+        # goods/services mix.
+        # NOTE: JOLTS features (JTSJOL, JTSQUR) are NaN pre-Dec-2000;
+        # the pipeline's expanding transforms and feature selector
+        # handle NaN-dense columns gracefully.
+        jolts_openings_col = 'coincident_JTSJOL'
+        unemploy_col = 'coincident_UNEMPLOY'
+        quits_col = 'coincident_JTSQUR'
+        civpart_col = 'coincident_CIVPART'
+        emratio_col = 'coincident_EMRATIO'
+        usgood_col = 'coincident_USGOOD'
+        usserv_col = 'coincident_USSERV'
+
+        # (a) Vacancy-Unemployment gap (JOLTS + UNEMPLOY)
+        if jolts_openings_col in df.columns and unemploy_col in df.columns:
+            openings = df[jolts_openings_col]
+            unemployed = df[unemploy_col]
+            # UNEMPLOY is persons in thousands; JTSJOL is also in thousands.
+            # Ratio gives labor-market tightness (higher = tighter).
+            vu_ratio = openings / unemployed.replace(0, np.nan)
+            df_eng['VU_RATIO'] = vu_ratio
+            df_eng['VU_RATIO_YoY'] = vu_ratio.pct_change(12)
+
+            vu_mean = vu_ratio.expanding(min_periods=24).mean()
+            vu_std = vu_ratio.expanding(min_periods=24).std().where(
+                lambda x: x > 1e-8, np.nan
+            )
+            df_eng['VU_RATIO_Z'] = (vu_ratio - vu_mean) / vu_std
+            # At-risk: V/U ratio deteriorating >15% YoY
+            df_eng['VU_DETERIORATION'] = (vu_ratio.pct_change(12) < -0.15).astype(float)
+
+            logger.info("  ✓ V/U gap features (JOLTS + UNEMPLOY)")
+
+        # (b) Quits rate signal (JOLTS)
+        if quits_col in df.columns:
+            quits = df[quits_col]
+            quits_mean = quits.expanding(min_periods=24).mean()
+            quits_std = quits.expanding(min_periods=24).std().where(
+                lambda x: x > 1e-8, np.nan
+            )
+            df_eng['QUITS_Z'] = (quits - quits_mean) / quits_std
+            df_eng['QUITS_DECLINE_YOY'] = quits.pct_change(12)
+            df_eng['QUITS_AT_RISK'] = (df_eng['QUITS_Z'] < -1.0).astype(float)
+
+            logger.info("  ✓ Quits rate features (JOLTS)")
+
+        # (c) Labor force participation gap (CIVPART)
+        if civpart_col in df.columns:
+            civpart = df[civpart_col]
+            cp_mean = civpart.expanding(min_periods=24).mean()
+            cp_std = civpart.expanding(min_periods=24).std().where(
+                lambda x: x > 1e-8, np.nan
+            )
+            df_eng['CIVPART_Z'] = (civpart - cp_mean) / cp_std
+            df_eng['CIVPART_GAP_60M'] = civpart - civpart.rolling(60, min_periods=24).mean()
+            df_eng['CIVPART_DROP_6M'] = civpart.diff(6)
+
+            logger.info("  ✓ Civilian participation gap features (CIVPART)")
+
+        # (d) Employment-to-population ratio gap (EMRATIO)
+        if emratio_col in df.columns:
+            emratio = df[emratio_col]
+            em_mean = emratio.expanding(min_periods=24).mean()
+            em_std = emratio.expanding(min_periods=24).std().where(
+                lambda x: x > 1e-8, np.nan
+            )
+            df_eng['EMRATIO_Z'] = (emratio - em_mean) / em_std
+            df_eng['EMRATIO_GAP_60M'] = emratio - emratio.rolling(60, min_periods=24).mean()
+            df_eng['EMRATIO_DROP_6M'] = emratio.diff(6)
+
+            logger.info("  ✓ Employment-to-population ratio features (EMRATIO)")
+
+        # (e) Cyclical vs acyclical mix (USGOOD + USSERV + PAYEMS)
+        if usgood_col in df.columns and payems_col in df.columns:
+            goods = df[usgood_col]
+            payems = df[payems_col]
+            goods_share = goods / payems.replace(0, np.nan)
+            df_eng['GOODS_SHARE'] = goods_share
+            df_eng['GOODS_SHARE_YoY'] = goods_share.pct_change(12)
+
+            goods_yoy = goods.pct_change(12)
+            df_eng['GOODS_DECLINE_FLAG'] = (goods_yoy < 0).astype(float)
+
+            if usserv_col in df.columns:
+                serv = df[usserv_col]
+                serv_yoy = serv.pct_change(12)
+                df_eng['GOODS_YoY_MINUS_SERV_YoY'] = goods_yoy - serv_yoy
+
+            logger.info("  ✓ Cyclical vs acyclical employment mix (goods/services)")
+
         # ── Clean up ─────────────────────────────────────────────────
         # Replace inf values from pct_change (division by zero when indicators cross zero)
         df_eng = df_eng.replace([np.inf, -np.inf], np.nan)
@@ -521,6 +626,7 @@ class RecessionDataAcquisition:
             'financial_NFCI', 'financial_ANFCI',
             'financial_BAMLH0A0HYM2', 'financial_BAMLC0A0CM',
             'coincident_IURSA',  # Insured unemployment rate (SOS indicator)
+            'coincident_UNEMPLOY',  # Level of unemployed persons (B2)
         }
 
         at_risk = pd.DataFrame(index=df.index)

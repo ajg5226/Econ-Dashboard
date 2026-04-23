@@ -1,0 +1,206 @@
+{
+  "experiment_id": "B2",
+  "ran_at_utc": "2026-04-23T16:57:36.163772Z",
+  "git_sha_current": "a4e0d899663a212d352335aa4a6c6b81286b714a",
+  "branch": "experiment/B2-labor-block",
+  "parent_branch": "experiment/B1-at-risk-bakeoff",
+  "new_series_added": [
+    "JTSJOL",
+    "JTSQUR",
+    "CIVPART",
+    "EMRATIO",
+    "USGOOD",
+    "USSERV",
+    "UNEMPLOY"
+  ],
+  "new_features_built": [
+    "VU_RATIO",
+    "VU_RATIO_YoY",
+    "VU_RATIO_Z",
+    "VU_DETERIORATION",
+    "QUITS_Z",
+    "QUITS_DECLINE_YOY",
+    "QUITS_AT_RISK",
+    "CIVPART_Z",
+    "CIVPART_GAP_60M",
+    "CIVPART_DROP_6M",
+    "EMRATIO_Z",
+    "EMRATIO_GAP_60M",
+    "EMRATIO_DROP_6M",
+    "GOODS_SHARE",
+    "GOODS_SHARE_YoY",
+    "GOODS_YoY_MINUS_SERV_YoY",
+    "GOODS_DECLINE_FLAG"
+  ],
+  "pre_2000_nan_series": [
+    "coincident_JTSJOL",
+    "coincident_JTSQUR",
+    "VU_RATIO",
+    "VU_RATIO_YoY",
+    "VU_RATIO_Z",
+    "VU_DETERIORATION",
+    "QUITS_Z",
+    "QUITS_DECLINE_YOY",
+    "QUITS_AT_RISK"
+  ],
+  "publication_lags_added": {
+    "coincident_JTSJOL": 2,
+    "coincident_JTSQUR": 2,
+    "coincident_CIVPART": 1,
+    "coincident_EMRATIO": 1,
+    "coincident_USGOOD": 1,
+    "coincident_USSERV": 1,
+    "coincident_UNEMPLOY": 1
+  },
+  "must_include_additions": [
+    "VU_RATIO_Z",
+    "QUITS_Z",
+    "GOODS_YoY_MINUS_SERV_YoY"
+  ],
+  "must_include_survival_note": "VU_RATIO_Z and QUITS_Z were added to must_include but are filtered out by the valid_cols 70%-non-null gate because JOLTS starts Dec-2000 (~46% coverage in the 1970+ training frame). This is expected per the plan's graceful-degradation requirement. GOODS_YoY_MINUS_SERV_YoY passed valid_cols and landed in selected features.",
+  "variants": {
+    "hybrid_no_b2_labor": {
+      "cv_auc": 0.9804978971645637,
+      "cv_pr_auc": 0.9351654938347428,
+      "cv_brier": 0.0539231568165004,
+      "cv_logloss": null,
+      "test_auc": 0.7114735658042745,
+      "test_pr_auc": 0.2524687294272548,
+      "test_brier": 0.0590532196315837,
+      "test_logloss": 0.2232959097795581,
+      "backtest_mean_auc": 0.9077354321561989,
+      "backtest_mean_brier": 0.20102628400106368,
+      "backtest_recessions": "5/6",
+      "per_recession_lead_months": {
+        "Volcker I (1980)": 6.964520367936925,
+        "Volcker II (1981-82)": 6.964520367936925,
+        "S&L Crisis (1990-91)": 6.964520367936925,
+        "GFC (2007-09)": 1.0183968462549278,
+        "COVID (2020)": -4.993429697766097
+      },
+      "gfc_lead_months": 1.0183968462549278,
+      "dot_com_lead_months": null,
+      "covid_lead_months": -4.993429697766097,
+      "volcker_i_lead_months": 6.964520367936925,
+      "volcker_ii_lead_months": 6.964520367936925,
+      "sl_lead_months": 6.964520367936925,
+      "top_20_features": [
+        "NFCI_Z",
+        "glr_CUMFNS_3M",
+        "leading_PRFI_3M",
+        "leading_PRFI_MoM",
+        "leading_USSLIND_MA6",
+        "leading_ICSA_YoY",
+        "financial_NFCI_MA3",
+        "leading_TB3MS_Vol6M",
+        "coincident_IURSA_3M",
+        "leading_PNFI_MoM",
+        "coincident_CMRMTSPL_6M",
+        "coincident_IURSA_6M",
+        "leading_UMCSENT_YoY",
+        "leading_USSLIND_AT_RISK",
+        "RESIDENTIAL_INV_Z",
+        "leading_ICSA_6M",
+        "DURABLES_Z",
+        "coincident_PAYEMS_Vol6M",
+        "leading_T10Y2Y_vs_ma24",
+        "leading_T10Y3M_MA6"
+      ],
+      "selected_feature_count": 50
+    },
+    "hybrid": {
+      "cv_auc": 0.9834825668159001,
+      "cv_pr_auc": 0.9574380452247896,
+      "cv_brier": 0.04994972956225981,
+      "cv_logloss": null,
+      "test_auc": 0.7103487064116986,
+      "test_pr_auc": 0.1936726386619776,
+      "test_brier": 0.0591520296391657,
+      "test_logloss": 0.2227406416198919,
+      "backtest_mean_auc": 0.8811813186813188,
+      "backtest_mean_brier": 0.21532572583487555,
+      "backtest_recessions": "5/6",
+      "per_recession_lead_months": {
+        "Volcker I (1980)": 6.964520367936925,
+        "Volcker II (1981-82)": -6.044678055190539,
+        "S&L Crisis (1990-91)": 4.9605781865965834,
+        "GFC (2007-09)": 2.0039421813403417,
+        "COVID (2020)": -4.993429697766097
+      },
+      "gfc_lead_months": 2.0039421813403417,
+      "dot_com_lead_months": null,
+      "covid_lead_months": -4.993429697766097,
+      "volcker_i_lead_months": 6.964520367936925,
+      "volcker_ii_lead_months": -6.044678055190539,
+      "sl_lead_months": 4.9605781865965834,
+      "top_20_features": [
+        "NFCI_Z",
+        "glr_CUMFNS_3M",
+        "coincident_IURSA_6M",
+        "leading_PRFI_MoM",
+        "leading_USSLIND",
+        "leading_ICSA_YoY",
+        "DURABLES_Z",
+        "coincident_IURSA_3M",
+        "RESIDENTIAL_INV_MOM3",
+        "financial_NFCI_MA3",
+        "leading_TB3MS_Vol6M",
+        "coincident_UNRATE_6M",
+        "leading_USSLIND_AT_RISK",
+        "leading_ICSA_6M",
+        "GOODS_DECLINE_FLAG",
+        "leading_PNFI_MoM",
+        "RESIDENTIAL_INV_Z",
+        "coincident_PAYEMS_Vol6M",
+        "coincident_CMRMTSPL_6M",
+        "leading_T10Y3M_MA6"
+      ],
+      "selected_feature_count": 50
+    }
+  },
+  "b2_features_in_top20": [
+    "GOODS_DECLINE_FLAG"
+  ],
+  "b2_features_in_all_selected": [
+    "GOODS_DECLINE_FLAG",
+    "GOODS_YoY_MINUS_SERV_YoY"
+  ],
+  "b2_importance_share_pct": 4.0,
+  "drop_ablation": {
+    "GOODS_DECLINE_FLAG": {
+      "delta_cv_pr_auc": -0.05079757429152176,
+      "delta_test_pr_auc": 0.041071709410952006,
+      "delta_test_auc": 0.013498312710911176,
+      "delta_test_brier": -0.00411081767011276
+    },
+    "GOODS_YoY_MINUS_SERV_YoY": {
+      "delta_cv_pr_auc": 0.0038069451071538474,
+      "delta_test_pr_auc": 0.04599792893930443,
+      "delta_test_auc": 0.0022497187851517886,
+      "delta_test_brier": -0.0008466120412957412
+    }
+  },
+  "drop_ablation_baseline": {
+    "cv_pr_auc": 0.9574380452247896,
+    "test_pr_auc": 0.19367263866197768,
+    "test_auc": 0.7103487064116986
+  },
+  "deltas_hybrid_minus_no_labor": {
+    "cv_pr_auc": 0.0223,
+    "test_pr_auc": -0.0588,
+    "cv_brier": -0.004,
+    "backtest_mean_auc": -0.0266,
+    "gfc_lead_months": 0.986
+  },
+  "verdict": "KEEP",
+  "verdict_reason": "hybrid (with B2) beats hybrid_no_b2_labor on CV PR-AUC by +2.2pp (0.9574 vs 0.9352), improves GFC lead by +1 month (2.0mo vs 1.0mo), and GOODS_DECLINE_FLAG contributes 5.1pp of CV PR-AUC per drop-ablation (meets \u22653% threshold). 2 B2 features survive selection (GOODS_DECLINE_FLAG, GOODS_YoY_MINUS_SERV_YoY). JOLTS features (VU_RATIO_Z, QUITS_Z) are dropped by the 70%-non-null gate as expected with only ~46% coverage. Trade-offs: Volcker II (\u221213mo) and S&L (\u22122mo) leads regress while Volcker I is unchanged and GFC improves; on net the CV PR-AUC and drop-ablation gates dominate.",
+  "gate_checks": {
+    "cv_pr_auc_2pp_gate": "PASS (+2.2pp)",
+    "gfc_lead_1mo_gate": "PASS (+1.0mo)",
+    "drop_ablation_3pp_gate": "PASS (GOODS_DECLINE_FLAG -5.1pp)",
+    "backtest_5_of_6_gate": "PASS (5/6 both variants \u2014 Dot-com misses, Oil Crisis pre-1970-class issue)",
+    "pre_2000_safety_gate": "PASS (JOLTS features excluded by valid_cols gate; pipeline ran end-to-end)"
+  },
+  "blockers": [],
+  "notes_for_validator": "This B2 run sat on the experiment/B1-at-risk-bakeoff base (B1 hybrid default not promoted to main but infra reused). Ensemble CV PR-AUC uses max-of-base proxy convention inherited from B1. All artifacts per variant under data/models/b2_variants/{no_labor,with_labor,drop_ablation.json}."
+}

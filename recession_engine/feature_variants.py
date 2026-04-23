@@ -52,6 +52,36 @@ SUPPORTED_VARIANTS = (
     "at_risk_only",
     "hybrid",
     "pca_on_binarized",
+    "hybrid_no_b2_labor",
+)
+
+# B2 Tier-12 labor features. Dropping these from the engineered frame is the
+# ablation baseline used by the B2 (labor deterioration block) bake-off. Listed
+# explicitly so the filter is deterministic even if new features are added
+# elsewhere under the same name prefixes.
+B2_LABOR_FEATURE_NAMES = (
+    # (a) Vacancy-Unemployment gap
+    "VU_RATIO", "VU_RATIO_YoY", "VU_RATIO_Z", "VU_DETERIORATION",
+    # (b) Quits rate signal
+    "QUITS_Z", "QUITS_DECLINE_YOY", "QUITS_AT_RISK",
+    # (c) Participation gap
+    "CIVPART_Z", "CIVPART_GAP_60M", "CIVPART_DROP_6M",
+    # (d) Employment-to-population gap
+    "EMRATIO_Z", "EMRATIO_GAP_60M", "EMRATIO_DROP_6M",
+    # (e) Cyclical vs acyclical mix
+    "GOODS_SHARE", "GOODS_SHARE_YoY", "GOODS_YoY_MINUS_SERV_YoY",
+    "GOODS_DECLINE_FLAG",
+)
+
+# The B2 series (raw + engineered derivatives) that must also be dropped so
+# the ablation baseline is an accurate "what hybrid looked like before B2".
+# Each B2 raw series generates the standard MoM/3M/6M/YoY/MA3/MA6/Vol6M
+# transforms plus an optional `_AT_RISK` column.
+B2_LABOR_RAW_SERIES = (
+    "coincident_JTSJOL", "coincident_JTSQUR",
+    "coincident_CIVPART", "coincident_EMRATIO",
+    "coincident_USGOOD", "coincident_USSERV",
+    "coincident_UNEMPLOY",
 )
 
 # Columns that must survive every variant — the model pipeline depends on them.
@@ -114,6 +144,48 @@ def describe_classification(df: pd.DataFrame) -> dict:
             c for c in DIFFUSION_COLUMNS if c in df.columns
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# B2 labor-block drop helper (for hybrid_no_b2_labor ablation)
+# ---------------------------------------------------------------------------
+
+# Standard per-series transforms produced by Tier-1 feature engineering. A
+# B2 raw series like ``coincident_JTSJOL`` is therefore accompanied by
+# ``coincident_JTSJOL_MoM``, ``_3M``, ``_6M``, ``_YoY``, ``_MA3``, ``_MA6``,
+# ``_Vol6M`` plus an optional ``_AT_RISK`` flag (Tier 4).
+_STANDARD_TRANSFORM_SUFFIXES = (
+    "_MoM", "_3M", "_6M", "_YoY",
+    "_MA3", "_MA6", "_Vol6M",
+    "_AT_RISK",
+)
+
+
+def _b2_labor_columns(columns: Iterable[str]) -> set:
+    """Return the set of B2-labor-related columns present in ``columns``."""
+    cols = set(columns)
+    drop = set()
+
+    # 1. Engineered Tier-12 columns — exact names.
+    for name in B2_LABOR_FEATURE_NAMES:
+        if name in cols:
+            drop.add(name)
+
+    # 2. Raw B2 series + their standard Tier-1 transforms + at-risk flag.
+    for raw in B2_LABOR_RAW_SERIES:
+        if raw in cols:
+            drop.add(raw)
+        for suffix in _STANDARD_TRANSFORM_SUFFIXES:
+            candidate = f"{raw}{suffix}"
+            if candidate in cols:
+                drop.add(candidate)
+
+    return drop
+
+
+def b2_labor_columns_present(df: pd.DataFrame) -> list:
+    """Public helper returning the sorted list of B2 columns in ``df``."""
+    return sorted(_b2_labor_columns(df.columns))
 
 
 # ---------------------------------------------------------------------------
@@ -228,6 +300,18 @@ def apply_feature_variant(
             len(at_risk_cols),
             len(meta_cols),
             len(continuous_cols),
+        )
+        return out
+
+    if variant == "hybrid_no_b2_labor":
+        # Drop every B2-derived column (engineered + raw + standard transforms).
+        drop_cols = _b2_labor_columns(df.columns)
+        keep = [c for c in df.columns if c not in drop_cols]
+        out = df[keep].copy()
+        logger.info(
+            "Variant hybrid_no_b2_labor: dropped %d B2 labor columns (%d total).",
+            len(drop_cols),
+            df.shape[1] - len(keep),
         )
         return out
 

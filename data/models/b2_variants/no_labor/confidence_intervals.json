@@ -1,0 +1,12 @@
+{
+  "ci_level": 0.9,
+  "n_bootstrap": 200,
+  "method": "Stationary block bootstrap (Politis-Romano)",
+  "method_key": "stationary_block_bootstrap",
+  "block_size_months": 12,
+  "empirical_coverage_on_backtest": null,
+  "latest_ci_lower": 0.25477296182384124,
+  "latest_ci_upper": 0.5718229701580664,
+  "latest_model_spread": 0.31705000833422514,
+  "timestamp": "2026-04-23T12:48:25.169667"
+}

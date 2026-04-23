@@ -1127,6 +1127,8 @@ class RecessionEnsembleModel:
             # Confirming indicators (Grigoli-Sandri, Leamer)
             'HOUSE_PRICE_DECLINING', 'RECESSION_CONFIRM_2OF3',
             'RESIDENTIAL_INV_YOY', 'SECTORAL_DIVERGENCE',
+            # B2 labor deterioration block — 3 highest-signal features per plan
+            'VU_RATIO_Z', 'QUITS_Z', 'GOODS_YoY_MINUS_SERV_YoY',
         ]
         priority_order = {feature: rank for rank, feature in enumerate(ranked_candidates)}
         protected = set()
