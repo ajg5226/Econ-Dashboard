@@ -1,14 +1,14 @@
 {
-  "timestamp_utc": "2026-04-19T05:26:33.302742Z",
-  "git_sha": "a5e625e08aecc13c86d2084156f32f36963921ca",
-  "python_version": "3.11.15",
+  "timestamp_utc": "2026-04-23T03:34:06.862613Z",
+  "git_sha": "c19a14d38d4f5482179fbd3f799fc5c18952e4f2",
+  "python_version": "3.13.3",
   "horizon_months": 6,
   "train_end_date": null,
   "max_features": 50,
   "n_cv_splits": 5,
   "model_config": {},
   "threshold_override": null,
-  "decision_threshold_used": 0.36,
+  "decision_threshold_used": 0.33,
   "threshold_method": "calibrated training F1 with precision/recall tie-breaks",
   "ensemble_method": "equal_weight_active",
   "active_models": [
@@ -21,12 +21,118 @@
     "random_forest": 0.5
   },
   "ensemble_metrics": {
-    "auc": 0.7120359955005624,
-    "pr_auc": 0.23209633622058126,
-    "brier": 0.05817494918991121,
-    "logloss": 0.21920919927886665
+    "auc": 0.6946006749156356,
+    "pr_auc": 0.1929565292541699,
+    "brier": 0.05481536567948316,
+    "logloss": 0.21677792277798183
   },
   "predictions_rows": 140,
   "latest_prediction_date": "2026-04-30",
-  "latest_known_outcome_date": "2025-10-31"
+  "latest_known_outcome_date": "2025-10-31",
+  "model_selection": {
+    "mode": "strict_vintage_search",
+    "candidate_id": "conservative_40",
+    "description": "Stronger regularization and leaner feature set",
+    "max_features": 40,
+    "n_cv_splits": 5,
+    "model_config": {
+      "probit": {
+        "C": 0.08
+      },
+      "random_forest": {
+        "n_estimators": 250,
+        "max_depth": 6,
+        "min_samples_split": 24,
+        "min_samples_leaf": 12
+      },
+      "xgboost": {
+        "n_estimators": 300,
+        "max_depth": 4,
+        "learning_rate": 0.02,
+        "min_child_weight": 12,
+        "subsample": 0.8,
+        "colsample_bytree": 0.7
+      }
+    },
+    "selection_metrics": {
+      "Origins_Tested": 11,
+      "Positive_Origins": 4,
+      "AUC": 0.8214285714285714,
+      "PR_AUC": 0.7470238095238095,
+      "Brier": 0.1662901253629258,
+      "LogLoss": 0.5010960971210369,
+      "Precision": 0.6,
+      "Recall": 0.75,
+      "F1": 0.6666666666666665,
+      "Specificity": 0.7142857142857143,
+      "Signal_Rate": 0.45454545454545453,
+      "Mean_Threshold": 0.30181818181818176,
+      "Mean_Train_Rows": 418.1818181818182,
+      "Candidate_ID": "conservative_40",
+      "Description": "Stronger regularization and leaner feature set",
+      "Max_Features": 40,
+      "CV_Splits": 5,
+      "Selection_Rank": 1,
+      "ALFRED_MAE": 0.1385111249905938,
+      "ALFRED_Bias": 0.13270834440019788
+    },
+    "promotion_gate": {
+      "passed": false,
+      "reason": "selected candidate underperformed incumbent on AUC, PR_AUC, Brier, LogLoss",
+      "checks": {
+        "AUC": {
+          "candidate": 0.6209223847019123,
+          "incumbent": 0.6946006749156356,
+          "direction": "higher",
+          "passed": false
+        },
+        "PR_AUC": {
+          "candidate": 0.17921108742004263,
+          "incumbent": 0.1929565292541699,
+          "direction": "higher",
+          "passed": false
+        },
+        "Brier": {
+          "candidate": 0.05816681991273074,
+          "incumbent": 0.05481536567948316,
+          "direction": "lower",
+          "passed": false
+        },
+        "LogLoss": {
+          "candidate": 0.4163325812571122,
+          "incumbent": 0.21677792277798183,
+          "direction": "lower",
+          "passed": false
+        }
+      },
+      "candidate_metrics": {
+        "AUC": 0.6209223847019123,
+        "PR_AUC": 0.17921108742004263,
+        "Brier": 0.05816681991273074,
+        "LogLoss": 0.4163325812571122,
+        "Precision": 0.15384615384615385,
+        "Recall": 0.2857142857142857,
+        "F1": 0.2,
+        "Specificity": 0.9133858267716536
+      },
+      "incumbent_metrics": {
+        "AUC": 0.6946006749156356,
+        "PR_AUC": 0.1929565292541699,
+        "Brier": 0.05481536567948316,
+        "LogLoss": 0.21677792277798183,
+        "Precision": 0.4,
+        "Recall": 0.2857142857142857,
+        "F1": 0.3333333333333333,
+        "Specificity": 0.9763779527559056
+      }
+    },
+    "promotion_decision": "retained_incumbent",
+    "final_applied_config": {
+      "candidate_id": "baseline_50",
+      "description": "Current live incumbent",
+      "max_features": 50,
+      "n_cv_splits": 5,
+      "model_config": {}
+    }
+  }
 }

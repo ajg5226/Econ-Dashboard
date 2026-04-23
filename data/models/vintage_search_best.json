@@ -25,23 +25,23 @@
   "selection_metrics": {
     "Origins_Tested": 11,
     "Positive_Origins": 4,
-    "AUC": 0.7857142857142857,
-    "PR_AUC": 0.6916666666666667,
-    "Brier": 0.19381973787092785,
-    "LogLoss": 0.5452382251699983,
+    "AUC": 0.8214285714285714,
+    "PR_AUC": 0.7470238095238095,
+    "Brier": 0.1662901253629258,
+    "LogLoss": 0.5010960971210369,
     "Precision": 0.6,
     "Recall": 0.75,
     "F1": 0.6666666666666665,
     "Specificity": 0.7142857142857143,
     "Signal_Rate": 0.45454545454545453,
-    "Mean_Threshold": 0.40545454545454546,
+    "Mean_Threshold": 0.30181818181818176,
     "Mean_Train_Rows": 418.1818181818182,
     "Candidate_ID": "conservative_40",
     "Description": "Stronger regularization and leaner feature set",
     "Max_Features": 40,
     "CV_Splits": 5,
     "Selection_Rank": 1,
-    "ALFRED_MAE": 0.1610665880107062,
-    "ALFRED_Bias": 0.10670829245385867
+    "ALFRED_MAE": 0.1385111249905938,
+    "ALFRED_Bias": 0.13270834440019788
   }
 }

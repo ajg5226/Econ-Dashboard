@@ -1,9 +1,9 @@
 Top candidate: conservative_40
 Origins tested: 11
-Primary metrics | PR-AUC: 0.692 | Brier: 0.1938 | F1: 0.667 | AUC: 0.786
-ALFRED mean abs gap: 16.11%
+Primary metrics | PR-AUC: 0.747 | Brier: 0.1663 | F1: 0.667 | AUC: 0.821
+ALFRED mean abs gap: 13.85%
 
 Top candidates:
-- conservative_40: PR-AUC 0.692, Brier 0.1938, F1 0.667
-- richer_60: PR-AUC 0.567, Brier 0.2055, F1 0.667
-- stability_first_50: PR-AUC 0.525, Brier 0.2185, F1 0.600
+- conservative_40: PR-AUC 0.747, Brier 0.1663, F1 0.667
+- stability_first_50: PR-AUC 0.692, Brier 0.1960, F1 0.667
+- richer_60: PR-AUC 0.646, Brier 0.1931, F1 0.667

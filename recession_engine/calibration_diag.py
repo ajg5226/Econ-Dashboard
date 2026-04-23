@@ -398,6 +398,15 @@ def stationary_block_bootstrap_ci(
     per replicate. We accumulate per-row running statistics (sum, sum-of-squares,
     and a quantile sketch) rather than storing the full (n_bootstrap, n_rows)
     matrix, so memory stays bounded.
+
+    A1.5 follow-up: widths from this helper alone can collapse when
+    ``model_predict_fn`` is near-deterministic given the resampled block (e.g.
+    when the only per-replicate variance comes from a meta-calibrator that
+    maps the same test point onto nearly the same calibrated value). The
+    production CI path in ``RecessionEnsembleModel.predict_with_confidence``
+    therefore augments percentiles with a normal-approximation band and a
+    minimum-width floor tied to base-model disagreement (Option B). See
+    ``predict_with_confidence`` for the combined CI construction.
     """
 
     X = np.asarray(X)

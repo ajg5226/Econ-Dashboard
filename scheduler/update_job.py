@@ -686,16 +686,36 @@ def _persist_model_bundle(*, bundle: dict, models_dir: Path, horizon_months: int
             entry_copy = dict(entry)
             entry_copy.setdefault('winner', cal_choice.get(name, 'isotonic'))
             models_payload[name] = entry_copy
+        # A1.5 — which calibrator is actually deployed per model. For base
+        # models the deployed path is isotonic (via CalibratedClassifierCV);
+        # for the ensemble we use the A1.5-promoted calibrator attached to
+        # model.ensemble_calibrator.
+        deployed_map = {}
+        for name in cal_diag.keys():
+            if name == "ensemble":
+                deployed_map[name] = (
+                    getattr(model, "deployed_ensemble_calibrator", None)
+                    or getattr(model, "preferred_ensemble_calibrator", "sigmoid")
+                )
+            else:
+                # All base models use isotonic via CalibratedClassifierCV
+                deployed_map[name] = "isotonic"
         with open(models_dir / "calibration_diagnostics.json", 'w') as f:
             json.dump({
                 'generated_at_utc': datetime.utcnow().isoformat(),
                 'git_sha': _get_git_sha(),
                 'models': models_payload,
+                'deployed_calibrators': deployed_map,
+                'preferred_ensemble_calibrator': getattr(
+                    model, "preferred_ensemble_calibrator", "sigmoid"
+                ),
             }, f, indent=2, default=str)
         logger.info(
-            "✓ Saved calibration diagnostics (%d model(s), winners: %s)",
+            "✓ Saved calibration diagnostics (%d model(s), A/B winners: %s, "
+            "deployed ensemble cal: %s)",
             len(models_payload),
             ", ".join(f"{n}={w}" for n, w in cal_choice.items()),
+            deployed_map.get("ensemble", "none"),
         )
 
     report = model.generate_report(bundle['test_df'], bundle['predictions'])

@@ -29,6 +29,9 @@
     {"peak": "2007-12", "trough": "2009-06", "name": "Great Financial Crisis"},
     {"peak": "2020-02", "trough": "2020-04", "name": "COVID"}
   ],
+  "baseline_artifacts_dir": "data/models/baseline_ed24542/",
+  "baseline_artifacts_git_sha": "ed24542",
+  "baseline_artifacts_note": "Pinned baseline pickles restored from git SHA ed24542 on 2026-04-22 so future validators can compare challenger-on-current-data vs baseline-on-current-data without retraining drift contaminating the comparison.",
   "baseline_metrics_at_freeze": {
     "source": "data/models/metrics.csv + backtest_summary.txt + alfred_vintage_summary.txt + confidence_intervals.json at git SHA ed24542",
     "ensemble_cv_auc": 0.695,

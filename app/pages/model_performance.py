@@ -440,12 +440,50 @@ else:
 
     winner_df = pd.DataFrame(winner_rows)
     if not winner_df.empty:
+        # A1.5: show deployed calibrator alongside A/B winner so it's
+        # immediately obvious when they diverge.
+        deployed_map = cal_diag.get("deployed_calibrators", {}) or {}
+        if deployed_map:
+            winner_df["Deployed"] = winner_df["Model"].map(
+                lambda m: deployed_map.get(m, "—")
+            )
+            # Mark rows where deployed != A/B winner with a caret.
+            winner_df["Winner_vs_Deployed"] = winner_df.apply(
+                lambda r: (
+                    "= match"
+                    if str(r.get("Deployed", "—")) == str(r.get("Winner", "—"))
+                    else "!= divergent"
+                ),
+                axis=1,
+            )
         st.markdown("**Calibrator A/B (holdout ECE — winner per model)**")
         st.dataframe(winner_df, use_container_width=True, hide_index=True)
-        st.caption(
-            "Measurement only — production calibrator stays isotonic until the "
-            "validator confirms a promotion on vintage origins."
+        ensemble_deployed = deployed_map.get("ensemble", "—")
+        ensemble_winner = next(
+            (str(r["Winner"]) for r in winner_rows if r["Model"] == "ensemble"),
+            "—",
         )
+        if ensemble_deployed != "—":
+            if ensemble_deployed == ensemble_winner:
+                st.caption(
+                    f"Ensemble-level calibrator: deployed=**{ensemble_deployed}** "
+                    f"(matches current A/B winner). Base-model calibrators "
+                    f"remain isotonic; the A/B winner column reflects the "
+                    f"latest holdout ECE comparison."
+                )
+            else:
+                st.caption(
+                    f"Ensemble-level calibrator: deployed=**{ensemble_deployed}** "
+                    f"(A/B winner on this run was **{ensemble_winner}**). "
+                    f"Sigmoid is pinned as the ensemble calibrator per A1.5; "
+                    f"it only flips to the A/B winner when the winner beats "
+                    f"sigmoid by >10% on holdout ECE."
+                )
+        else:
+            st.caption(
+                "Measurement only — production calibrator stays isotonic until "
+                "the validator confirms a promotion on vintage origins."
+            )
 
     generated = cal_diag.get("generated_at_utc", "")
     git_sha = cal_diag.get("git_sha", "unknown")

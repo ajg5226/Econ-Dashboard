@@ -1,0 +1,42 @@
+{
+  "generated_at_utc": "2026-04-23T02:39:24.302208Z",
+  "baseline_artifacts_dir": "data/models/baseline_ed24542",
+  "baseline_git_sha": "ed24542",
+  "test_window_rows": 134,
+  "test_window_dates": [
+    "2014-09-30",
+    "2025-10-31"
+  ],
+  "test_recession_rate": 0.05223880597014925,
+  "baseline_weights_used": {
+    "probit": 0.5,
+    "random_forest": 0.5
+  },
+  "per_model": {
+    "probit": {
+      "auc": 0.8582677165354331,
+      "pr_auc": 0.41961133526667505,
+      "brier": 0.039757551484604456,
+      "logloss": 0.15645996143190433
+    },
+    "random_forest": {
+      "auc": 0.4797525309336333,
+      "pr_auc": 0.12234744644126307,
+      "brier": 0.05187031417932439,
+      "logloss": 0.5804631364005944
+    },
+    "xgboost": {
+      "auc": 0.48875140607424067,
+      "pr_auc": 0.0611229566453447,
+      "brier": 0.05215305632043038,
+      "logloss": 0.5769095943269023
+    }
+  },
+  "ensemble": {
+    "auc": 0.7182227221597302,
+    "pr_auc": 0.3558673469387755,
+    "brier": 0.04425397131793673,
+    "logloss": 0.18228859650140028
+  },
+  "notes": "Baseline pickles scored on the current feature frame's last 134 labeled rows (same test window as the live CV split). Feature ordering matches ed24542; PCA slots are zero-padded when the pickled scaler/classifier expects augmented features. This is a best-effort reproduction of the ed24542 test metrics against fresh data \u2014 use it to isolate code deltas from data-refresh drift."
+}

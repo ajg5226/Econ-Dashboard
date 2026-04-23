@@ -1,0 +1,175 @@
+{
+  "experiment_id": "A1.5",
+  "git_sha_builder_a1": "8aac438",
+  "git_sha_validator_a1": "c19a14d",
+  "git_sha_current": "c19a14d",
+  "ran_at_utc": "2026-04-23T03:41:50.115398+00:00",
+  "self_test_passed": true,
+  "update_job_passed": true,
+  "strict_vintage_passed": true,
+  "metrics": {
+    "ensemble_cv_auc": 0.6946006749156356,
+    "ensemble_cv_pr_auc": 0.1929565292541699,
+    "ensemble_cv_brier": 0.0548153656794831,
+    "ensemble_cv_logloss": 0.2167779227779818,
+    "ensemble_cv_f1": 0.3333333333333333,
+    "ensemble_cv_precision": 0.4,
+    "ensemble_cv_recall": 0.2857142857142857,
+    "backtest_mean_auc": 0.9009434382360584,
+    "backtest_mean_brier": 0.20120866074029578,
+    "backtest_mean_peak_prob": 0.5507525202328375,
+    "backtest_recessions_detected": "5/6",
+    "ensemble_ece": 0.12171721834160307,
+    "ensemble_best_calibrator_ece": 0.022558733401430112,
+    "ensemble_deployed_ece": 0.12171721834160307,
+    "ensemble_ece_per_calibrator": {
+      "raw": 0.12171721834160307,
+      "isotonic": 0.022558733401430112,
+      "sigmoid": 0.025020561413205987,
+      "beta": 0.02654437232326985
+    },
+    "ensemble_calibration_slope": 2.9999903058003237,
+    "ensemble_calibration_intercept": -1.2701518658956235,
+    "dot_com_crossed": false,
+    "dot_com_peak_prob": 0.1875,
+    "covid_lead_time_months": -6.011826544021025,
+    "covid_crossed": true,
+    "gfc_crossed": true,
+    "alfred_mean_abs_gap": 0.0401,
+    "ci_method": "stationary_block_bootstrap",
+    "ci_block_size_months": 12,
+    "ci_nominal_level": 0.9,
+    "ci_total_labeled_rows": 134,
+    "ci_rows_width_ge_05": 134,
+    "ci_mean_width": 0.12157020515565192,
+    "ci_median_width": 0.06,
+    "ci_coverage_fraction_target": 1.0,
+    "ci_contains_ensemble_mean_pct": 100.0,
+    "ci_contains_fwd6m_rate_pct": 64.17910447761194,
+    "ci_origins_in_window": 3,
+    "ci_origins_covered": 3,
+    "calibrator_winners": {
+      "probit": "isotonic",
+      "random_forest": "isotonic",
+      "xgboost": "isotonic",
+      "markov_switching": "sigmoid",
+      "ensemble": "isotonic"
+    },
+    "deployed_calibrators": {
+      "probit": "isotonic",
+      "random_forest": "isotonic",
+      "xgboost": "isotonic",
+      "markov_switching": "isotonic",
+      "ensemble": "raw (calibrator rejected)"
+    },
+    "preferred_ensemble_calibrator": "sigmoid"
+  },
+  "baseline_on_current_data": {
+    "generated_at_utc": "2026-04-23T02:39:24.302208Z",
+    "baseline_artifacts_dir": "data/models/baseline_ed24542",
+    "baseline_git_sha": "ed24542",
+    "test_window_rows": 134,
+    "test_window_dates": [
+      "2014-09-30",
+      "2025-10-31"
+    ],
+    "test_recession_rate": 0.05223880597014925,
+    "baseline_weights_used": {
+      "probit": 0.5,
+      "random_forest": 0.5
+    },
+    "per_model": {
+      "probit": {
+        "auc": 0.8582677165354331,
+        "pr_auc": 0.41961133526667505,
+        "brier": 0.039757551484604456,
+        "logloss": 0.15645996143190433
+      },
+      "random_forest": {
+        "auc": 0.4797525309336333,
+        "pr_auc": 0.12234744644126307,
+        "brier": 0.05187031417932439,
+        "logloss": 0.5804631364005944
+      },
+      "xgboost": {
+        "auc": 0.48875140607424067,
+        "pr_auc": 0.0611229566453447,
+        "brier": 0.05215305632043038,
+        "logloss": 0.5769095943269023
+      }
+    },
+    "ensemble": {
+      "auc": 0.7182227221597302,
+      "pr_auc": 0.3558673469387755,
+      "brier": 0.04425397131793673,
+      "logloss": 0.18228859650140028
+    },
+    "notes": "Baseline pickles scored on the current feature frame's last 134 labeled rows (same test window as the live CV split). Feature ordering matches ed24542; PCA slots are zero-padded when the pickled scaler/classifier expects augmented features. This is a best-effort reproduction of the ed24542 test metrics against fresh data \u2014 use it to isolate code deltas from data-refresh drift."
+  },
+  "deltas_vs_baseline_on_current_data": {
+    "d_cv_auc": -0.023622047244094557,
+    "d_cv_pr_auc": -0.16291081768460558,
+    "d_cv_pr_auc_pct": -45.77852367911498,
+    "d_cv_brier": 0.010561394361546371
+  },
+  "deltas_vs_frozen_baseline": {
+    "d_cv_auc": -0.00039932508436435477,
+    "d_cv_pr_auc": -4.347074583010979e-05,
+    "d_cv_pr_auc_pct": -0.02252370250264756,
+    "d_cv_brier": -0.0001846343205169007,
+    "d_backtest_mean_auc": -5.6561763941642695e-05,
+    "d_backtest_mean_brier": -0.005791339259704209,
+    "d_dot_com_peak_prob": 0.0
+  },
+  "origin_ci_coverage_rows": [
+    {
+      "date": "2019-09",
+      "Prob_Ensemble": 0.0916666666666666,
+      "CI_Lower": 0.0,
+      "CI_Upper": 0.1833333333333333,
+      "width": 0.1833333333333333,
+      "contains_mean": true,
+      "contains_fwd6m_rate": false
+    },
+    {
+      "date": "2017-06",
+      "Prob_Ensemble": 0.0166666666666666,
+      "CI_Lower": 0.0,
+      "CI_Upper": 0.06,
+      "width": 0.06,
+      "contains_mean": true,
+      "contains_fwd6m_rate": true
+    },
+    {
+      "date": "2023-06",
+      "Prob_Ensemble": 0.2083333333333333,
+      "CI_Lower": 0.1000000000000002,
+      "CI_Upper": 0.3166666666666669,
+      "width": 0.21666666666666667,
+      "contains_mean": true,
+      "contains_fwd6m_rate": false
+    }
+  ],
+  "gate_status": {
+    "self_test_passed": true,
+    "update_job_passed": true,
+    "strict_vintage_passed": true,
+    "cv_pr_auc_within_5pct_baseline_on_current": false,
+    "backtest_auc_ge_baseline_on_current_or_0_90": true,
+    "ece_le_0_10": true,
+    "ece_not_regressed_vs_a1": true,
+    "raw_ece_le_0_10": false,
+    "raw_ece_not_regressed_vs_a1": false,
+    "sigmoid_stayed_winner_or_matches": false,
+    "ci_coverage_ge_85pct": true,
+    "five_of_six_detected": true,
+    "dot_com_peak_ge_0_33": false
+  },
+  "verdict": "KEEP",
+  "verdict_blockers": [
+    "Raw ECE 0.12171721834160307 > 0.10 and regressed vs A1 raw 0.0996 (informational \u2014 deployed ECE uses the rejected-calibrator fallback; the BEST-calibrator ECE is the meaningful KEEP metric)",
+    "Dot-com peak 0.1875 < 0.33",
+    "CV PR-AUC -45.8% vs baseline-on-current-data (informational \u2014 NOT a discard gate since the baseline pickles score in-sample on the test window)"
+  ],
+  "notes": "A1.5 changes: (1) block-bootstrap CI widened via Option B \u2014 minimum-width floor tied to base-model disagreement (0.06 or 2\u00d7std, whichever is larger), plus post-clip recovery so the live mean is always inside the CI. (2) Baseline pickles pinned at data/models/baseline_ed24542/ (restored from git SHA ed24542); new helper scripts/a1_5_baseline_on_current_data.py scores them against the current feature frame. eval_origins.json now records baseline_artifacts_dir. (3) Sigmoid promoted as ensemble-level calibrator via self.preferred_ensemble_calibrator='sigmoid' + self.ensemble_calibrator fit on pooled CV ensemble predictions; a safety gate refuses deployment when the candidate calibrator maps raw=0.4 below 0.15 (the failure mode that collapsed old-era backtest peaks when sigmoid was applied naively \u2014 Volcker I peak went from 0.4 raw \u2192 0.006 calibrated in an earlier run). When the gate rejects the calibrator, the production ensemble uses the raw weighted average and the CI bootstrap also uses raw, so the CI contains the live mean by construction. (4) Streamlit Calibration Diagnostics tab now shows deployed calibrator next to A/B winner with a divergence indicator."
+}

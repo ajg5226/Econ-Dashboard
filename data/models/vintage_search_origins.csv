@@ -2,60 +2,60 @@ Candidate_ID,Origin_Label,Origin_Date,Train_Label_Cutoff,Reason,Actual_Recession
 baseline_50,Oil Crisis (positive window),1973-06,1972-12,Insufficient train history (36 rows),,,,,,,,
 baseline_50,Volcker I (positive window),1979-08,1979-02,Insufficient train history (110 rows),,,,,,,,
 baseline_50,Volcker II (positive window),1981-02,1980-08,Insufficient train history (128 rows),,,,,,,,
-baseline_50,S&L (positive window),1990-02,1989-08,,1.0,0.45185512596381217,1.0,0.36,236.0,63.0,"probit,random_forest",equal_weight_active
-baseline_50,Dot-com (positive window),2000-10,2000-04,,1.0,0.4269047619047619,1.0,0.32,364.0,76.0,"probit,random_forest",equal_weight_active
-baseline_50,GFC (positive window),2007-07,2007-01,,1.0,0.7650648522170858,1.0,0.53,445.0,89.0,"probit,random_forest",equal_weight_active
-baseline_50,COVID (positive window),2019-09,2019-03,,1.0,0.2157580982088103,0.0,0.3,591.0,112.0,"probit,random_forest",equal_weight_active
+baseline_50,S&L (positive window),1990-02,1989-08,,1.0,0.5170179965841599,1.0,0.45,236.0,63.0,"probit,random_forest",equal_weight_active
+baseline_50,Dot-com (positive window),2000-10,2000-04,,1.0,0.46393779309126487,1.0,0.38,364.0,76.0,"probit,random_forest",equal_weight_active
+baseline_50,GFC (positive window),2007-07,2007-01,,1.0,0.8419982090231358,1.0,0.54,445.0,89.0,"probit,random_forest",equal_weight_active
+baseline_50,COVID (positive window),2019-09,2019-03,,1.0,0.24776104897963142,0.0,0.36,591.0,112.0,"probit,random_forest,xgboost",equal_weight_active
 baseline_50,Expansion check (late 1970s),1978-06,1977-12,Insufficient train history (96 rows),,,,,,,,
-baseline_50,Expansion check (mid 1980s),1986-06,1985-12,,0.0,0.17647653071626512,0.0,0.23,192.0,63.0,"probit,random_forest",equal_weight_active
-baseline_50,Expansion check (mid 1990s),1995-06,1994-12,,0.0,0.653331400936676,1.0,0.48,300.0,76.0,"random_forest,probit",equal_weight_active
-baseline_50,Expansion check (late 1990s),1998-06,1997-12,,0.0,0.1123076923076923,0.0,0.23,336.0,76.0,"probit,random_forest",equal_weight_active
-baseline_50,Expansion check (mid 2000s),2004-06,2003-12,,0.0,0.0960811600390707,0.0,0.44,408.0,89.0,"probit,random_forest",equal_weight_active
-baseline_50,Expansion check (mid 2010s),2014-06,2013-12,,0.0,0.09952168490246842,0.0,0.4,528.0,112.0,"probit,random_forest",equal_weight_active
-baseline_50,Expansion check (late 2010s),2017-06,2016-12,,0.0,0.18064182416477217,0.0,0.52,564.0,112.0,"probit,random_forest",equal_weight_active
-baseline_50,Expansion check (recent cycle),2023-06,2022-12,,0.0,0.5541021102589272,1.0,0.52,636.0,119.0,"probit,random_forest,xgboost",equal_weight_active
+baseline_50,Expansion check (mid 1980s),1986-06,1985-12,,0.0,0.01,0.0,0.41,192.0,63.0,"probit,random_forest",equal_weight_active
+baseline_50,Expansion check (mid 1990s),1995-06,1994-12,,0.0,0.7717517833513727,1.0,0.46,300.0,76.0,"random_forest,probit",equal_weight_active
+baseline_50,Expansion check (late 1990s),1998-06,1997-12,,0.0,0.15269607843137253,0.0,0.22,336.0,76.0,"random_forest,probit",equal_weight_active
+baseline_50,Expansion check (mid 2000s),2004-06,2003-12,,0.0,0.03299224602765964,0.0,0.15,408.0,89.0,"probit,random_forest",equal_weight_active
+baseline_50,Expansion check (mid 2010s),2014-06,2013-12,,0.0,0.056428571428571425,0.0,0.36,528.0,112.0,"probit,random_forest",equal_weight_active
+baseline_50,Expansion check (late 2010s),2017-06,2016-12,,0.0,0.17448082917139926,0.0,0.43,564.0,112.0,"probit,random_forest",equal_weight_active
+baseline_50,Expansion check (recent cycle),2023-06,2022-12,,0.0,0.8493645032246907,1.0,0.59,636.0,119.0,"probit,random_forest,xgboost",equal_weight_active
 conservative_40,Oil Crisis (positive window),1973-06,1972-12,Insufficient train history (36 rows),,,,,,,,
 conservative_40,Volcker I (positive window),1979-08,1979-02,Insufficient train history (110 rows),,,,,,,,
 conservative_40,Volcker II (positive window),1981-02,1980-08,Insufficient train history (128 rows),,,,,,,,
-conservative_40,S&L (positive window),1990-02,1989-08,,1.0,0.33437800829749353,1.0,0.31,236.0,63.0,"probit,random_forest",equal_weight_active
-conservative_40,Dot-com (positive window),2000-10,2000-04,,1.0,0.5633333333333332,1.0,0.31,364.0,76.0,"probit,random_forest",equal_weight_active
-conservative_40,GFC (positive window),2007-07,2007-01,,1.0,0.7436999286851576,1.0,0.47,445.0,89.0,"probit,random_forest",equal_weight_active
-conservative_40,COVID (positive window),2019-09,2019-03,,1.0,0.09783818209132722,0.0,0.37,591.0,112.0,"probit,random_forest,xgboost",equal_weight_active
+conservative_40,S&L (positive window),1990-02,1989-08,,1.0,0.5,1.0,0.34,236.0,63.0,"probit,random_forest",equal_weight_active
+conservative_40,Dot-com (positive window),2000-10,2000-04,,1.0,0.59,1.0,0.36,364.0,76.0,"probit,random_forest",equal_weight_active
+conservative_40,GFC (positive window),2007-07,2007-01,,1.0,0.99,1.0,0.3,445.0,89.0,"probit,random_forest",equal_weight_active
+conservative_40,COVID (positive window),2019-09,2019-03,,1.0,0.07027856054352803,0.0,0.38,591.0,112.0,"probit,random_forest,xgboost",equal_weight_active
 conservative_40,Expansion check (late 1970s),1978-06,1977-12,Insufficient train history (96 rows),,,,,,,,
-conservative_40,Expansion check (mid 1980s),1986-06,1985-12,,0.0,0.13333333333333333,0.0,0.37,192.0,63.0,"probit,random_forest",equal_weight_active
-conservative_40,Expansion check (mid 1990s),1995-06,1994-12,,0.0,0.6423076923076922,1.0,0.54,300.0,76.0,"random_forest,probit",equal_weight_active
-conservative_40,Expansion check (late 1990s),1998-06,1997-12,,0.0,0.16300664388334823,0.0,0.31,336.0,76.0,"probit,random_forest",equal_weight_active
-conservative_40,Expansion check (mid 2000s),2004-06,2003-12,,0.0,0.23891522642342014,0.0,0.39,408.0,89.0,"probit,random_forest",equal_weight_active
-conservative_40,Expansion check (mid 2010s),2014-06,2013-12,,0.0,0.09638958047208139,0.0,0.36,528.0,112.0,"probit,random_forest",equal_weight_active
-conservative_40,Expansion check (late 2010s),2017-06,2016-12,,0.0,0.09624089925997593,0.0,0.38,564.0,112.0,"probit,random_forest",equal_weight_active
-conservative_40,Expansion check (recent cycle),2023-06,2022-12,,0.0,0.5865304490963318,1.0,0.51,636.0,119.0,"probit,random_forest,xgboost",equal_weight_active
+conservative_40,Expansion check (mid 1980s),1986-06,1985-12,,0.0,3.7736126062126487e-97,0.0,0.1,192.0,63.0,"probit,random_forest",equal_weight_active
+conservative_40,Expansion check (mid 1990s),1995-06,1994-12,,0.0,0.6409090909090909,1.0,0.51,300.0,76.0,"random_forest,probit",equal_weight_active
+conservative_40,Expansion check (late 1990s),1998-06,1997-12,,0.0,0.12348862895240438,0.0,0.22,336.0,76.0,"probit,random_forest",equal_weight_active
+conservative_40,Expansion check (mid 2000s),2004-06,2003-12,,0.0,0.010218135846733947,0.0,0.18,408.0,89.0,"probit,random_forest",equal_weight_active
+conservative_40,Expansion check (mid 2010s),2014-06,2013-12,,0.0,0.023348820511779177,0.0,0.3,528.0,112.0,"probit,random_forest",equal_weight_active
+conservative_40,Expansion check (late 2010s),2017-06,2016-12,,0.0,0.01111111111111111,0.0,0.39,564.0,112.0,"probit,random_forest",equal_weight_active
+conservative_40,Expansion check (recent cycle),2023-06,2022-12,,0.0,0.34615384615384615,1.0,0.24,636.0,119.0,"probit,random_forest",equal_weight_active
 stability_first_50,Oil Crisis (positive window),1973-06,1972-12,Insufficient train history (36 rows),,,,,,,,
 stability_first_50,Volcker I (positive window),1979-08,1979-02,Insufficient train history (110 rows),,,,,,,,
 stability_first_50,Volcker II (positive window),1981-02,1980-08,Insufficient train history (128 rows),,,,,,,,
-stability_first_50,S&L (positive window),1990-02,1989-08,,1.0,0.4202380952380952,1.0,0.34,236.0,63.0,"probit,random_forest",equal_weight_active
-stability_first_50,Dot-com (positive window),2000-10,2000-04,,1.0,0.4285714285714286,1.0,0.33,364.0,76.0,"probit,random_forest",equal_weight_active
-stability_first_50,GFC (positive window),2007-07,2007-01,,1.0,0.7597079263982409,1.0,0.47,445.0,89.0,"probit,random_forest",equal_weight_active
-stability_first_50,COVID (positive window),2019-09,2019-03,,1.0,0.11906385670932434,0.0,0.28,591.0,112.0,"probit,random_forest",equal_weight_active
+stability_first_50,S&L (positive window),1990-02,1989-08,,1.0,0.4892434505763409,1.0,0.1,236.0,63.0,"probit,random_forest",equal_weight_active
+stability_first_50,Dot-com (positive window),2000-10,2000-04,,1.0,0.45688724471601416,1.0,0.4,364.0,76.0,"probit,random_forest",equal_weight_active
+stability_first_50,GFC (positive window),2007-07,2007-01,,1.0,0.99,1.0,0.2,445.0,89.0,"probit,random_forest",equal_weight_active
+stability_first_50,COVID (positive window),2019-09,2019-03,,1.0,0.2683333333333333,0.0,0.32,591.0,112.0,"probit,random_forest",equal_weight_active
 stability_first_50,Expansion check (late 1970s),1978-06,1977-12,Insufficient train history (96 rows),,,,,,,,
-stability_first_50,Expansion check (mid 1980s),1986-06,1985-12,,0.0,0.15237625481916606,0.0,0.31,192.0,63.0,"probit,random_forest",equal_weight_active
-stability_first_50,Expansion check (mid 1990s),1995-06,1994-12,,0.0,0.6630100557033799,1.0,0.48,300.0,76.0,"probit,random_forest",equal_weight_active
-stability_first_50,Expansion check (late 1990s),1998-06,1997-12,,0.0,0.11285714285714285,0.0,0.23,336.0,76.0,"probit,random_forest",equal_weight_active
-stability_first_50,Expansion check (mid 2000s),2004-06,2003-12,,0.0,0.05984848484848485,0.0,0.45,408.0,89.0,"probit,random_forest",equal_weight_active
-stability_first_50,Expansion check (mid 2010s),2014-06,2013-12,,0.0,0.025,0.0,0.45,528.0,112.0,"probit,random_forest",equal_weight_active
-stability_first_50,Expansion check (late 2010s),2017-06,2016-12,,0.0,0.13498753802002528,0.0,0.37,564.0,112.0,"probit,random_forest",equal_weight_active
-stability_first_50,Expansion check (recent cycle),2023-06,2022-12,,0.0,0.5414650386165663,0.0,0.6,636.0,119.0,"probit,random_forest,xgboost",equal_weight_active
+stability_first_50,Expansion check (mid 1980s),1986-06,1985-12,,0.0,0.01,0.0,0.17,192.0,63.0,"probit,random_forest",equal_weight_active
+stability_first_50,Expansion check (mid 1990s),1995-06,1994-12,,0.0,0.6798882775414357,1.0,0.5,300.0,76.0,"random_forest,probit",equal_weight_active
+stability_first_50,Expansion check (late 1990s),1998-06,1997-12,,0.0,0.1550554588424295,0.0,0.22,336.0,76.0,"probit,random_forest",equal_weight_active
+stability_first_50,Expansion check (mid 2000s),2004-06,2003-12,,0.0,0.025021633928310305,0.0,0.14,408.0,89.0,"probit,random_forest",equal_weight_active
+stability_first_50,Expansion check (mid 2010s),2014-06,2013-12,,0.0,0.05684900711968992,0.0,0.31,528.0,112.0,"probit,random_forest",equal_weight_active
+stability_first_50,Expansion check (late 2010s),2017-06,2016-12,,0.0,0.1672727272727273,0.0,0.45,564.0,112.0,"probit,random_forest",equal_weight_active
+stability_first_50,Expansion check (recent cycle),2023-06,2022-12,,0.0,0.7393820193885464,1.0,0.56,636.0,119.0,"probit,random_forest,xgboost",equal_weight_active
 richer_60,Oil Crisis (positive window),1973-06,1972-12,Insufficient train history (36 rows),,,,,,,,
 richer_60,Volcker I (positive window),1979-08,1979-02,Insufficient train history (110 rows),,,,,,,,
 richer_60,Volcker II (positive window),1981-02,1980-08,Insufficient train history (128 rows),,,,,,,,
-richer_60,S&L (positive window),1990-02,1989-08,,1.0,0.6,1.0,0.37,236.0,63.0,"probit,random_forest",equal_weight_active
-richer_60,Dot-com (positive window),2000-10,2000-04,,1.0,0.4387909502895348,1.0,0.32,364.0,76.0,"probit,random_forest",equal_weight_active
-richer_60,GFC (positive window),2007-07,2007-01,,1.0,0.7608974358974359,1.0,0.5,445.0,89.0,"probit,random_forest",equal_weight_active
-richer_60,COVID (positive window),2019-09,2019-03,,1.0,0.08251098066717398,0.0,0.37,591.0,112.0,"probit,random_forest,xgboost",equal_weight_active
+richer_60,S&L (positive window),1990-02,1989-08,,1.0,0.5,1.0,0.1,236.0,63.0,"probit,random_forest",equal_weight_active
+richer_60,Dot-com (positive window),2000-10,2000-04,,1.0,0.39083333333333337,1.0,0.3,364.0,76.0,"probit,random_forest",equal_weight_active
+richer_60,GFC (positive window),2007-07,2007-01,,1.0,0.7308008658008658,1.0,0.52,445.0,89.0,"probit,random_forest",equal_weight_active
+richer_60,COVID (positive window),2019-09,2019-03,,1.0,0.25682084247147247,0.0,0.4,591.0,112.0,"probit,random_forest,xgboost",equal_weight_active
 richer_60,Expansion check (late 1970s),1978-06,1977-12,Insufficient train history (96 rows),,,,,,,,
-richer_60,Expansion check (mid 1980s),1986-06,1985-12,,0.0,0.26725632496550566,0.0,0.36,192.0,63.0,"probit,random_forest",equal_weight_active
-richer_60,Expansion check (mid 1990s),1995-06,1994-12,,0.0,0.7008810554899966,1.0,0.58,300.0,76.0,"probit,random_forest",equal_weight_active
-richer_60,Expansion check (late 1990s),1998-06,1997-12,,0.0,0.16709956709956708,0.0,0.23,336.0,76.0,"probit,random_forest",equal_weight_active
-richer_60,Expansion check (mid 2000s),2004-06,2003-12,,0.0,0.28886222250579463,0.0,0.47,408.0,89.0,"probit,random_forest",equal_weight_active
-richer_60,Expansion check (mid 2010s),2014-06,2013-12,,0.0,0.11170678070071298,0.0,0.4,528.0,112.0,"probit,random_forest",equal_weight_active
-richer_60,Expansion check (late 2010s),2017-06,2016-12,,0.0,0.14926470588235294,0.0,0.51,564.0,112.0,"probit,random_forest",equal_weight_active
-richer_60,Expansion check (recent cycle),2023-06,2022-12,,0.0,0.579348968563832,0.0,0.58,636.0,119.0,"probit,random_forest,xgboost",equal_weight_active
+richer_60,Expansion check (mid 1980s),1986-06,1985-12,,0.0,0.13333333333333333,1.0,0.1,192.0,63.0,"probit,random_forest",equal_weight_active
+richer_60,Expansion check (mid 1990s),1995-06,1994-12,,0.0,0.794813087972787,1.0,0.47,300.0,76.0,"random_forest,probit",equal_weight_active
+richer_60,Expansion check (late 1990s),1998-06,1997-12,,0.0,0.17333333333333334,0.0,0.27,336.0,76.0,"probit,random_forest",equal_weight_active
+richer_60,Expansion check (mid 2000s),2004-06,2003-12,,0.0,0.24446179056385947,0.0,0.41,408.0,89.0,"probit,random_forest",equal_weight_active
+richer_60,Expansion check (mid 2010s),2014-06,2013-12,,0.0,0.01,0.0,0.1,528.0,112.0,"probit,random_forest",equal_weight_active
+richer_60,Expansion check (late 2010s),2017-06,2016-12,,0.0,0.1540931306558447,0.0,0.48,564.0,112.0,"probit,random_forest,xgboost",equal_weight_active
+richer_60,Expansion check (recent cycle),2023-06,2022-12,,0.0,0.34,0.0,0.35,636.0,119.0,"probit,random_forest,xgboost",equal_weight_active
