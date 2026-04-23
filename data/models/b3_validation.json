@@ -2,6 +2,7 @@
   "experiment_id": "B3",
   "ran_at_utc": "2026-04-23T19:54:02.411651Z",
   "git_sha_current": "aa493df",
+  "git_sha_post_commit": "75e6c47",
   "branch": "experiment/B3-credit-supply",
   "parent_branch": "main",
   "scope_policy": "1990-present",
