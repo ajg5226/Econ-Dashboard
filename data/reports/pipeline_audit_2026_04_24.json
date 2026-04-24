@@ -1,0 +1,211 @@
+{
+  "audit_id": "AUDIT-1",
+  "audit_date_utc": "2026-04-24",
+  "branch": "audit/pipeline-econometric-review",
+  "triggering_observation": {
+    "baseline_from": "efb307e (2026-04-23, post-B3)",
+    "baseline_to": "0411da9 (2026-04-24, post-C5)",
+    "metric_deltas": {
+      "ensemble_cv_pr_auc": {"from": 0.288, "to": 0.196, "delta": -0.092},
+      "ensemble_cv_auc":    {"from": 0.732, "to": 0.722, "delta": -0.010},
+      "decision_threshold": {"from": 0.41,  "to": 0.30,  "delta": -0.11},
+      "gfc_lead_months":    {"from": 6.96,  "to": -1.02, "delta": -7.98},
+      "covid_lead_months":  {"from": -4.99, "to": -6.01, "delta": -1.02},
+      "dotcom_peak_prob":   {"from": 0.230, "to": 0.193, "delta": -0.037}
+    }
+  },
+  "executive_summary": {
+    "primary_root_cause": "threshold_tie_break_flip_on_flat_F1_plateau",
+    "secondary_root_cause": "small_sample_feature_selection_churn_1_of_50",
+    "tertiary_root_cause": "none — training is deterministic, FRED data was effectively identical for training rows",
+    "severity": "no_critical_bugs_found",
+    "is_drift_real_model_quality_change": false,
+    "is_drift_measurement_artifact": true,
+    "feature_experiments_can_resume_immediately": true,
+    "preferred_evaluation_metric_going_forward": "Lead_Months_Fixed (C5) at frozen baseline threshold 0.41"
+  },
+  "priority_1_hypotheses": {
+    "hypothesis_A_non_determinism": {
+      "test": "Two consecutive RecessionEnsembleModel.fit() runs on identical feature frame",
+      "verdict": "FALSIFIED — training is deterministic",
+      "evidence": {
+        "decision_threshold": {"run1": 0.300, "run2": 0.300, "identical": true},
+        "feature_cols_identical": true,
+        "ensemble_weights_identical": {"probit": 0.5, "random_forest": 0.5},
+        "active_models_identical": ["probit", "random_forest"],
+        "cv_results_identical_to_8_sig_figs": true,
+        "ensemble_predictions_first10_and_last10_identical": true,
+        "only_difference": "runtime_sec (22.8 vs 21.7)"
+      },
+      "seeds_verified": {
+        "LogisticRegression.random_state": 42,
+        "RandomForestClassifier.random_state": 42,
+        "XGBClassifier.random_state": 42,
+        "PCA.random_state": 42,
+        "mutual_info_classif.random_state": 42,
+        "stationary_block_bootstrap": "np.random.default_rng(42) and RandomState(42)"
+      }
+    },
+    "hypothesis_B_fred_revisions": {
+      "test": "Diff indicators.csv raw-FRED columns between efb307e and 0411da9",
+      "verdict": "FALSIFIED — training data was effectively identical",
+      "evidence": {
+        "raw_fred_cells_changed_total": 5,
+        "raw_fred_cells_changed_all_at_date": "2026-04-30 (nowcast month, not training)",
+        "specific_changes": [
+          {"col": "leading_T10Y3M",   "from": 0.61,     "to": 0.65},
+          {"col": "monetary_BAA10Y",  "from": 1.70,     "to": 1.69},
+          {"col": "glr_WALCL",        "from": 6705696,  "to": 6707419},
+          {"col": "glr_WTREGEN",      "from": 751354,   "to": 1005968},
+          {"col": "glr_WLRRAL",       "from": 339866,   "to": 325124}
+        ],
+        "gfc_era_raw_fred_cells_changed": 0,
+        "gfc_era_at_risk_diffusion_cells_appeared_changed": 68,
+        "gfc_at_risk_diffusion_change_is_artifact_of": "stale on-disk indicators.csv persistence (Apr-23 snapshot missed B3 credit-supply columns even though Apr-23 code already generated them at runtime)",
+        "actual_training_frame_identity_verdict": "effectively identical for training rows (train ends ~2025-04; only nowcast row 2026-04 has any raw-FRED change)"
+      }
+    },
+    "hypothesis_C_feature_selection_instability": {
+      "verdict": "CONFIRMED (mild) — 49/50 overlap",
+      "feature_swap": {
+        "removed_apr23_to_apr24": "GOODS_YoY_MINUS_SERV_YoY",
+        "added_apr23_to_apr24": "coincident_UNEMPLOY_YoY"
+      },
+      "overlap_fraction": 0.98,
+      "severity": "MEDIUM — swap at 50-cap boundary; both features near-equally-weakly-ranked",
+      "location_in_code": "recession_engine/ensemble_model.py:1267-1301"
+    },
+    "hypothesis_D_threshold_sensitivity": {
+      "verdict": "CONFIRMED — this is the PRIMARY driver of the 8-month GFC lead-time swing",
+      "evidence": {
+        "efb307e_era": {
+          "winner_threshold": 0.41,
+          "best_f1": 0.9279,
+          "thresholds_within_001_of_best_f1": 10,
+          "plateau_range": [0.31, 0.41]
+        },
+        "0411da9_era": {
+          "winner_threshold": 0.30,
+          "best_f1": 0.9244,
+          "thresholds_within_001_of_best_f1": 9,
+          "plateau_range": [0.29, 0.41]
+        },
+        "interpretation": "F1 objective has a wide flat plateau; tie-break flips ends of the plateau on tiny input shifts",
+        "gfc_lead_mechanism": "GFC probability trajectory crosses 0.30 months before it crosses 0.41; threshold flip → lead-time swings discontinuously without any underlying model change"
+      },
+      "source": "/tmp/analyze_thresholds.py"
+    }
+  },
+  "priority_2_tenets_scorecard": {
+    "time_series_integrity": {
+      "TimeSeriesSplit_no_shuffle": "PASS",
+      "scaler_per_fold": "PASS",
+      "pca_per_fold": "PASS",
+      "calibrator_uses_internal_tscv": "PASS",
+      "expanding_stats_history_only": "PASS",
+      "target_no_t_overlap": "PASS",
+      "target_uses_only_RECESSION": "PASS"
+    },
+    "feature_engineering_leakage": {
+      "pct_change_rolling_transforms_history_only": "PASS",
+      "at_risk_expanding_quantile_history_only": "PASS",
+      "pca_scaler_fit_only_on_train_fold": "PASS",
+      "no_ffill_backward_or_bfill": "PASS",
+      "feature_drift_windows_valid": "PASS"
+    },
+    "publication_lag_correctness": {
+      "training_path_applies_publication_lags": "FAIL",
+      "training_path_detail": "update_job.py:843 passes df_features from engineer_features(df_raw) without applying PUBLICATION_LAGS — training sees perfect-foresight data; only backtester applies lags",
+      "backtest_honors_publication_lags": "PASS",
+      "lag_values_realistic": "WARNING — JOLTS 2-month lag slightly optimistic"
+    },
+    "target_leakage": {
+      "RECESSION_FORWARD_6M_no_overlap_with_T": "PASS",
+      "feature_engineering_excludes_target": "PASS",
+      "feature_selection_excludes_target": "PASS"
+    },
+    "rare_event_handling": {
+      "class_weighting_on_all_base_learners": "PASS",
+      "no_SMOTE_cross_fold_contamination": "PASS",
+      "train_test_base_rate_reported": "PASS",
+      "overfitting_check": "WARNING — train AUC 0.99+ vs CV 0.92-0.96 shows measurable overfit; partially mitigated by ensemble calibration + gating"
+    },
+    "small_sample_stability": {
+      "feature_selection_stability": "WARNING — 1/50 swap on near-identical data",
+      "cv_determinism_identical_inputs": "PASS",
+      "threshold_plateau_width_tracked": "FAIL — no metric tracks plateau width today"
+    },
+    "regime_forecast_split": {
+      "training_uses_full_history": "PASS",
+      "evaluation_1990_present_scope": "PASS",
+      "expanding_normalizer_era_comparability": "WARNING — not a bug, but non-stationary sample size"
+    },
+    "determinism": {
+      "random_state_42_on_all_estimators": "PASS",
+      "block_bootstrap_seeded": "PASS",
+      "no_module_level_random_seed": "PASS",
+      "reproducibility_test": "PASS"
+    },
+    "backtesting_hygiene": {
+      "test_outside_train_each_origin": "PASS",
+      "publication_lag_replay": "PASS",
+      "no_test_set_hyperparameter_tuning": "PASS",
+      "per_recession_retraining": "PASS"
+    }
+  },
+  "severity_ranked_findings": {
+    "critical": [],
+    "high": [
+      {
+        "id": "HIGH-1",
+        "title": "Threshold-plateau instability drives lead-time measurement artifacts",
+        "location": "recession_engine/ensemble_model.py:1886-1931",
+        "impact": "Lead-time metrics swing by ~3-8 months baseline-to-baseline without any underlying model change; challenger comparisons on re-tuned thresholds misattribute noise to code",
+        "fix": "Elevate C5 Lead_Months_Fixed to primary metric; emit threshold_plateau_width in manifest"
+      },
+      {
+        "id": "HIGH-2",
+        "title": "Training path does not apply publication lags",
+        "location": "scheduler/update_job.py:843",
+        "impact": "Training sees perfect-foresight macro data while backtest honors lag — CV metrics are optimistic relative to live performance",
+        "fix": "Apply PUBLICATION_LAGS before engineer_features in production training path"
+      }
+    ],
+    "medium": [
+      {
+        "id": "MED-1",
+        "title": "Feature selection 1-slot churn at 50-cap boundary",
+        "location": "recession_engine/ensemble_model.py:1267-1301",
+        "fix": "Deterministic alphabetical tie-break on composite scores"
+      },
+      {
+        "id": "MED-2",
+        "title": "Large parameter search on ~600 training months",
+        "fix": "Optionally reduce max_features from 50 to ~30 (experimental tradeoff)"
+      },
+      {
+        "id": "MED-3",
+        "title": "Expanding normalizers have non-stationary sample sizes",
+        "fix": "Optional — rolling 30-year window for regime-sensitive features"
+      }
+    ],
+    "low": [
+      {"id": "LOW-1", "title": "Isotonic calibrator step-boundary contributor to threshold flip (already captured in HIGH-1)"},
+      {"id": "LOW-2", "title": "JOLTS publication lag of 2 months may be mildly optimistic"}
+    ]
+  },
+  "recommended_fix_order": [
+    {"rank": 1, "fix": "Elevate Lead_Months_Fixed to primary lead-time metric in reports/backtests", "effort_hours": 1},
+    {"rank": 2, "fix": "Apply PUBLICATION_LAGS to training path", "effort_hours": 1.5},
+    {"rank": 3, "fix": "Emit threshold_plateau_width in run_manifest.json + flag when plateau is flat", "effort_hours": 0.5},
+    {"rank": 4, "fix": "Deterministic feature-selection tie-break (alphabetical)", "effort_hours": 0.25},
+    {"rank": 5, "fix": "Document expected CV PR-AUC / lead-time noise floor in README", "effort_hours": 0.5}
+  ],
+  "can_c2_resume_immediately": true,
+  "c2_resumption_note": "YES — pipeline is deterministic with no critical bugs. Adopt C5 fixed-threshold gate as primary metric; Fix-1 (elevate Lead_Months_Fixed) should land before next C2 retro-comparison.",
+  "patches_written": [
+    "scripts/audit_patches/fix_threshold_plateau_diagnostics.py — demonstrates threshold-plateau-width metric emission (DEMO ONLY, not applied to main)"
+  ],
+  "audit_branch": "audit/pipeline-econometric-review",
+  "audit_commit_sha": "a55d490bc09e0059245dc28466e1f7d836194acf"
+}
