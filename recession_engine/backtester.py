@@ -14,6 +14,26 @@ Key recessions tested:
 - 2001 (Dot-com bust)
 - 2007-09 (Great Financial Crisis)
 - 2020 (COVID pandemic)
+
+Threshold-stability-gate support (C5, 2026-04-23):
+    :meth:`run_pseudo_oos_backtest` emits two lead-time measurements per row:
+
+    * ``Lead_Months`` — computed at the per-origin F1-optimized threshold,
+      as before.
+    * ``Lead_Months_Fixed`` — computed at the frozen baseline decision
+      threshold loaded from
+      ``data/models/baseline_efb307e/threshold.json`` (override via the
+      ``fixed_threshold`` argument).
+
+    Full per-origin probability trajectories are persisted in the
+    ``Probability_Trajectory`` / ``Actual_Trajectory`` columns so that
+    challenger runs can be re-scored at any future threshold via
+    :mod:`recession_engine.threshold_stability`. Every new experiment is
+    expected to verify that no in-scope recession's
+    ``Lead_Months_Fixed`` regresses more than 2 months relative to the
+    baseline; see :mod:`recession_engine.threshold_stability` for the
+    gating helpers and ``data/reports/experiment_ledger.md`` "Notes for
+    validators" for the policy.
 """
 
 import pandas as pd
@@ -32,6 +52,11 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 import warnings
+
+try:
+    from .threshold_stability import load_baseline_threshold
+except Exception:  # pragma: no cover — circular import guard
+    load_baseline_threshold = None  # type: ignore[assignment]
 
 warnings.filterwarnings('ignore')
 logger = logging.getLogger(__name__)
@@ -646,7 +671,8 @@ class RecessionBacktester:
         return "\n".join(lines)
 
     def run_pseudo_oos_backtest(self, df_with_target, cutoff_dates=None,
-                                model_config=None, max_features=50, n_cv_splits=5):
+                                model_config=None, max_features=50, n_cv_splits=5,
+                                fixed_threshold=None, store_trajectory=True):
         """
         Pseudo out-of-sample backtest: train through each cutoff, predict forward.
 
@@ -656,9 +682,19 @@ class RecessionBacktester:
         Args:
             df_with_target: Full DataFrame with engineered features and target
             cutoff_dates: List of cutoff date strings. If None, uses pre-recession dates.
+            fixed_threshold: Reference threshold for the stability gate. Defaults to
+                the value in ``data/models/baseline_efb307e/threshold.json``. Set to
+                ``None`` to skip the ``Lead_Months_Fixed`` computation.
+            store_trajectory: If True, preserve the full per-origin probability
+                trajectory in the ``Probability_Trajectory`` column (and matched
+                ``Actual_Trajectory``) so that downstream callers can re-score at
+                any future threshold via
+                :func:`recession_engine.threshold_stability
+                .rescore_backtest_at_fixed_threshold`.
 
         Returns:
-            DataFrame with backtest results per recession
+            DataFrame with backtest results per recession, including the
+            ``Lead_Months_Fixed`` column whenever ``fixed_threshold`` is set.
         """
         target_col = f'RECESSION_FORWARD_{self.target_horizon}M'
 
@@ -673,6 +709,21 @@ class RecessionBacktester:
                 ('2006-12', '2010-06', 'GFC (2007-09)'),
                 ('2019-02', '2021-04', 'COVID (2020)'),
             ]
+
+        # Resolve fixed threshold reference; log once per call.
+        if fixed_threshold is None and load_baseline_threshold is not None:
+            try:
+                fixed_threshold = load_baseline_threshold()
+                logger.debug("Fixed stability threshold loaded: %s", fixed_threshold)
+            except FileNotFoundError:
+                logger.info(
+                    "Baseline threshold reference not found — skipping "
+                    "Lead_Months_Fixed column"
+                )
+                fixed_threshold = None
+            except Exception as exc:
+                logger.warning("Could not load baseline threshold: %s", exc)
+                fixed_threshold = None
 
         results = []
 
@@ -717,10 +768,11 @@ class RecessionBacktester:
 
                 # Months of lead time before recession
                 recession_months = test_df.index[y_true == 1]
-                if len(recession_months) > 0:
-                    first_recession = recession_months[0]
+                first_recession = recession_months[0] if len(recession_months) > 0 else None
+                y_ensemble_arr = np.asarray(y_ensemble)
+                if first_recession is not None:
                     # Find first month probability exceeded threshold
-                    above_thresh = test_df.index[y_ensemble >= model.decision_threshold]
+                    above_thresh = test_df.index[y_ensemble_arr >= model.decision_threshold]
                     if len(above_thresh) > 0:
                         first_signal = above_thresh[0]
                         lead_months = (first_recession - first_signal).days / 30.44
@@ -728,6 +780,18 @@ class RecessionBacktester:
                         lead_months = np.nan
                 else:
                     lead_months = np.nan
+
+                # Fixed-threshold lead time (threshold-stability gate; C5).
+                lead_months_fixed = np.nan
+                crossed_fixed = np.nan
+                if fixed_threshold is not None:
+                    crossed_fixed = bool(np.any(y_ensemble_arr >= fixed_threshold))
+                    if first_recession is not None:
+                        above_fixed = test_df.index[y_ensemble_arr >= fixed_threshold]
+                        if len(above_fixed) > 0:
+                            lead_months_fixed = (
+                                first_recession - above_fixed[0]
+                            ).days / 30.44
 
                 result = {
                     'Recession': label,
@@ -741,6 +805,9 @@ class RecessionBacktester:
                     'Crossed_Threshold': crossed,
                     'Threshold': model.decision_threshold,
                     'Lead_Months': lead_months,
+                    'Fixed_Threshold': fixed_threshold,
+                    'Crossed_Threshold_Fixed': crossed_fixed,
+                    'Lead_Months_Fixed': lead_months_fixed,
                     'Ensemble_Weights': model.ensemble_weights.copy(),
                 }
 
@@ -748,6 +815,20 @@ class RecessionBacktester:
                 for mname in ['probit', 'random_forest', 'xgboost', 'markov_switching']:
                     if mname in predictions:
                         result[f'Peak_{mname}'] = np.max(predictions[mname])
+
+                # Store per-origin trajectories so future analyses can re-score
+                # at any threshold without rerunning the model.
+                if store_trajectory:
+                    traj = list(zip(
+                        [d.strftime('%Y-%m-%d') for d in test_df.index],
+                        [float(v) for v in y_ensemble_arr],
+                    ))
+                    actuals = list(zip(
+                        [d.strftime('%Y-%m-%d') for d in test_df.index],
+                        [int(v) if not pd.isna(v) else None for v in y_true.values],
+                    ))
+                    result['Probability_Trajectory'] = traj
+                    result['Actual_Trajectory'] = actuals
 
                 results.append(result)
 

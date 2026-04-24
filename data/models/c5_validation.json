@@ -1,0 +1,43 @@
+{
+  "experiment": "C5",
+  "title": "Threshold stability gate",
+  "generated_at_utc": "2026-04-24T15:18:14.057541Z",
+  "git_sha": "3f47774643d1692feaa2f5166bf4bb76fae7de09",
+  "verdict": "KEEP",
+  "description": "Ship the fixed-threshold re-scoring utility + retroactive gate. Future experiments evaluate challenger lead time at the frozen baseline threshold in addition to the per-variant F1-optimal threshold, preventing the B3/C3/B5 class of threshold-shift measurement artifacts.",
+  "fixed_threshold": 0.41,
+  "tolerance_months": 2.0,
+  "retroactive_findings": [
+    {
+      "experiment_id": "B3",
+      "original_verdict": "Merged under override \u2014 we expect GFC lead to remain strong at the fixed threshold.",
+      "c5_verdict": "KEEP-under-C5",
+      "passed": true,
+      "violation_count": 0
+    },
+    {
+      "experiment_id": "C3",
+      "original_verdict": "DISCARD under per-variant F1 threshold \u2014 did re-optimization destroy the lead?",
+      "c5_verdict": "DISCARD-under-C5",
+      "passed": false,
+      "violation_count": 1
+    },
+    {
+      "experiment_id": "B5",
+      "original_verdict": "DISCARD \u2014 does Dot-com lift hold at the fixed threshold? Does GFC collapse remain?",
+      "c5_verdict": "DISCARD-under-C5",
+      "passed": false,
+      "violation_count": 1
+    }
+  ],
+  "modules": [
+    "recession_engine/threshold_stability.py",
+    "recession_engine/backtester.py (extended \u2014 Lead_Months_Fixed + trajectory)",
+    "scripts/c5_retroactive_rescore.py"
+  ],
+  "artifacts": [
+    "data/models/c5_retroactive_analysis.json",
+    "data/models/c5_retroactive_analysis.md"
+  ],
+  "any_challenger_failed_gate": true
+}
