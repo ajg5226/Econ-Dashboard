@@ -1,0 +1,41 @@
+{
+  "generated_at_utc": "2026-04-24T00:23:29.048694Z",
+  "baseline_artifacts_dir": "data/models/baseline_efb307e",
+  "baseline_git_sha": "efb307e",
+  "scored_on_feature_frame": "post-B3 production frame (current)",
+  "test_window_rows": 134,
+  "test_window_dates": [
+    "2014-09-30",
+    "2025-10-31"
+  ],
+  "test_recession_rate": 0.05223880597014925,
+  "baseline_weights_used": {
+    "probit": 0.5,
+    "random_forest": 0.5
+  },
+  "missing_features_count": 0,
+  "missing_features_sample": [],
+  "per_model": {
+    "probit": {
+      "auc": 0.9274465691788526,
+      "pr_auc": 0.5016933258312568,
+      "brier": 0.04049425445745757
+    },
+    "random_forest": {
+      "auc": 0.5236220472440944,
+      "pr_auc": 0.11826581378820183,
+      "brier": 0.05679246366602381
+    },
+    "xgboost": {
+      "auc": 0.5539932508436445,
+      "pr_auc": 0.1256406629540958,
+      "brier": 0.056783767148561884
+    }
+  },
+  "ensemble": {
+    "auc": 0.811586051743532,
+    "pr_auc": 0.27736335913675814,
+    "brier": 0.04559435766120212
+  },
+  "notes": "Pinned baseline_efb307e pickles scored on the current (C1) feature frame's last 134 labeled rows. Isolates the code delta (C1 benchmark members added) from retraining variance: the baseline doesn't use benchmark members, so this should match at-freeze metrics unless the shared feature space changed."
+}

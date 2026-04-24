@@ -695,6 +695,196 @@ class LSTMRecessionModel:
         return np.column_stack([1.0 - preds, preds])
 
 
+# ──────────────────────────────────────────────────────────────────────
+# C1 — Benchmark (peer-model) ensemble members
+# ──────────────────────────────────────────────────────────────────────
+#
+# These three wrappers expose the same (fit, predict_proba) API as the
+# supervised base models so the DMA weighting pipeline can treat them
+# uniformly. Two wrap externally-published recession probability series
+# (Hamilton, Chauvet-Piger) pulled from FRED as `ref_*` columns; the
+# third fits a classical Wright (2006) probit on (T10Y3M, DFF, T10Y3M ×
+# DFF). Reference columns are excluded from ordinary feature selection
+# (see RecessionEnsembleModel.select_features), so using them here does
+# not double-count signal into probit/RF/XGB.
+
+
+class HamiltonBenchmarkModel:
+    """
+    Ensemble wrapper around Hamilton's GDP-Based Recession Indicator Index.
+
+    JHGDPBRINDX (Hamilton 2019, "Why You Should Never Use the Hodrick-Prescott
+    Filter") is published by FRED on a [0, 100] scale representing the
+    probability of recession in the just-completed quarter. Divide by 100 to
+    get a [0, 1] probability.
+
+    fit() is a no-op (the values are externally-computed); predict_proba()
+    reads the column on-the-fly from the test DataFrame.
+    """
+
+    COLUMN = 'ref_JHGDPBRINDX'
+    NEUTRAL_PROB = 0.05  # Fallback when the series is missing (low, not 0.5)
+
+    def __init__(self):
+        self.fitted = False
+
+    def fit(self, X_df, y=None):  # noqa: ARG002 — y unused; external series
+        self.fitted = True
+        return self
+
+    def predict_proba(self, X_df):
+        n = len(X_df)
+        if self.COLUMN in X_df.columns:
+            series = X_df[self.COLUMN].astype(float) / 100.0
+            probs = series.fillna(self.NEUTRAL_PROB).clip(0.0, 1.0).values
+        else:
+            probs = np.full(n, self.NEUTRAL_PROB)
+        probs = np.clip(probs, 0.01, 0.99)
+        return np.column_stack([1.0 - probs, probs])
+
+
+class ChauvetPigerBenchmarkModel:
+    """
+    Ensemble wrapper around the Chauvet-Piger smoothed recession probability.
+
+    RECPROUSM156N (Chauvet-Piger 2008) is published by FRED on [0, 1]
+    already and represents the probability the US economy is in recession
+    based on a real-time regime-switching dynamic factor model. No rescaling
+    needed; just map NaNs to a neutral prior.
+
+    fit() is a no-op; predict_proba() reads the column from the test frame.
+    """
+
+    COLUMN = 'ref_RECPROUSM156N'
+    NEUTRAL_PROB = 0.05
+
+    def __init__(self):
+        self.fitted = False
+
+    def fit(self, X_df, y=None):  # noqa: ARG002
+        self.fitted = True
+        return self
+
+    def predict_proba(self, X_df):
+        n = len(X_df)
+        if self.COLUMN in X_df.columns:
+            series = X_df[self.COLUMN].astype(float)
+            probs = series.fillna(self.NEUTRAL_PROB).clip(0.0, 1.0).values
+        else:
+            probs = np.full(n, self.NEUTRAL_PROB)
+        probs = np.clip(probs, 0.01, 0.99)
+        return np.column_stack([1.0 - probs, probs])
+
+
+class WrightProbitModel:
+    """
+    Classical Wright (2006) recession probit: probit probability of a
+    recession within `target_horizon` months as a function of the yield
+    curve slope (T10Y3M), the effective federal funds rate (DFF), and
+    their interaction.
+
+    We stand in an L2-penalized logistic regression for the probit link —
+    statsmodels' probit solver is finicky on small samples with a single
+    quasi-separating spread, and under a probit vs logit link the resulting
+    recession probabilities differ only in a monotonic transformation that
+    isotonic / sigmoid calibration would absorb anyway. Signal content is
+    the same.
+
+    Features used: ``leading_T10Y3M``, ``monetary_DFF``, and their product.
+    Missing rows are dropped for fit; for predict, missing values are
+    forward-filled (or, if still missing, mapped to a neutral low prob).
+    """
+
+    SLOPE_COL = 'leading_T10Y3M'
+    FFR_COL = 'monetary_DFF'
+    NEUTRAL_PROB = 0.05
+
+    def __init__(self):
+        self.model = None
+        self.fitted = False
+        self._mean = None
+        self._std = None
+
+    def _build_matrix(self, df):
+        if self.SLOPE_COL not in df.columns or self.FFR_COL not in df.columns:
+            return None
+        slope = df[self.SLOPE_COL].astype(float)
+        ffr = df[self.FFR_COL].astype(float)
+        interaction = slope * ffr
+        X = pd.concat([slope, ffr, interaction], axis=1)
+        X.columns = [self.SLOPE_COL, self.FFR_COL, f"{self.SLOPE_COL}_x_{self.FFR_COL}"]
+        return X
+
+    def fit(self, X_df, y):
+        X = self._build_matrix(X_df)
+        if X is None:
+            logger.warning("WrightProbit: required columns missing (%s, %s); skipping",
+                           self.SLOPE_COL, self.FFR_COL)
+            self.fitted = False
+            return self
+
+        # Align and drop rows where any predictor or y is NaN
+        y_series = y if hasattr(y, 'loc') else pd.Series(y, index=X_df.index)
+        combined = pd.concat([X, y_series.rename('y')], axis=1).dropna()
+        if len(combined) < 60 or combined['y'].nunique() < 2:
+            logger.warning("WrightProbit: too few observations (%d) or single class; skipping",
+                           len(combined))
+            self.fitted = False
+            return self
+
+        X_fit = combined.drop(columns='y').values
+        y_fit = combined['y'].values
+
+        # Standardize the 3 features for stable L2 logistic fit
+        self._mean = X_fit.mean(axis=0)
+        self._std = X_fit.std(axis=0) + 1e-8
+        X_scaled = (X_fit - self._mean) / self._std
+
+        try:
+            self.model = LogisticRegression(
+                penalty='l2',
+                C=1.0,
+                solver='lbfgs',
+                max_iter=500,
+                class_weight='balanced',
+                random_state=42,
+            )
+            self.model.fit(X_scaled, y_fit)
+            self.fitted = True
+            logger.info("WrightProbit fitted on %d obs (%d positives)",
+                        len(combined), int(y_fit.sum()))
+        except Exception as e:
+            logger.warning("WrightProbit fit failed: %s", e)
+            self.fitted = False
+        return self
+
+    def predict_proba(self, X_df):
+        n = len(X_df)
+        if not self.fitted or self.model is None:
+            return np.column_stack([np.full(n, 1 - self.NEUTRAL_PROB),
+                                     np.full(n, self.NEUTRAL_PROB)])
+
+        X = self._build_matrix(X_df)
+        if X is None:
+            return np.column_stack([np.full(n, 1 - self.NEUTRAL_PROB),
+                                     np.full(n, self.NEUTRAL_PROB)])
+
+        X_ff = X.ffill().fillna(0.0).values
+        X_scaled = (X_ff - self._mean) / self._std
+        probs = self.model.predict_proba(X_scaled)[:, 1]
+        probs = np.clip(probs, 0.01, 0.99)
+        return np.column_stack([1.0 - probs, probs])
+
+
+# Registry (ordered) of benchmark members added under --benchmark-members=on.
+# Keep as a list of (name, factory) tuples so iteration is deterministic.
+BENCHMARK_MODEL_FACTORIES = [
+    ('hamilton_benchmark', HamiltonBenchmarkModel),
+    ('chauvet_piger_benchmark', ChauvetPigerBenchmarkModel),
+    ('wright_probit', WrightProbitModel),
+]
+
+
 class RecessionEnsembleModel:
     """
     Ensemble recession prediction model.
@@ -744,6 +934,13 @@ class RecessionEnsembleModel:
         self.active_models = []
         self.feature_drift_scores = {}
         self.equal_weight_shrinkage = float(self.model_config.get('equal_weight_shrinkage', 1.0))
+        # C1 — benchmark (peer-model) ensemble members. When enabled, the
+        # Hamilton + Chauvet-Piger probability series and a Wright probit are
+        # added as ensemble members alongside probit/RF/XGB/markov_switching.
+        self.benchmark_members_enabled = bool(
+            self.model_config.get('benchmark_members_enabled', False)
+        )
+        self.benchmark_models = {}  # name -> fitted benchmark wrapper (set in fit)
         self.ensemble_method = "equal_weight_active"
         self.threshold_method = "calibrated training F1 with precision/recall tie-breaks"
         self.threshold_diagnostics = []
@@ -1295,6 +1492,30 @@ class RecessionEnsembleModel:
             else:
                 logger.warning("  MarkovSwitching failed to fit; excluded from ensemble")
 
+        # ── Step 2b2: Fit benchmark (peer-model) ensemble members ────
+        # C1: wrap externally-published recession probabilities (Hamilton
+        # JHGDPBRINDX, Chauvet-Piger RECPROUSM156N) and a Wright (2006)
+        # probit on (T10Y3M, DFF, T10Y3M × DFF) as full ensemble members.
+        # Reference series (ref_*) are excluded from ordinary feature
+        # selection, so this adds signal without double-counting.
+        if self.benchmark_members_enabled:
+            for bm_name, factory in BENCHMARK_MODEL_FACTORIES:
+                logger.info("Fitting %s (benchmark member)...", bm_name)
+                bm = factory()
+                bm.fit(train_df, y_train)
+                if not bm.fitted:
+                    logger.warning("  %s failed to fit; excluded from ensemble", bm_name)
+                    continue
+                self.benchmark_models[bm_name] = bm
+                try:
+                    bm_train_proba = bm.predict_proba(train_df)[:, 1]
+                    bm_auc = roc_auc_score(y_train, bm_train_proba)
+                    bm_brier = brier_score_loss(y_train, bm_train_proba)
+                    logger.info("  Training AUC: %.4f, Brier: %.4f", bm_auc, bm_brier)
+                except Exception as e:
+                    logger.warning("  Training metric computation failed: %s", e)
+                all_model_names.append(bm_name)
+
         # ── Step 2c: Fit LSTM model ───────────────────────────────────
         if self.lstm_model is not None:
             logger.info("Fitting lstm...")
@@ -1373,6 +1594,23 @@ class RecessionEnsembleModel:
                 else:
                     fold_auc = 0.5
                 cv_fold_aucs['markov_switching'].append(fold_auc)
+
+            # Benchmark members CV: refit on this fold's training slice so
+            # calibration/fit (Wright probit) uses only past data.
+            for bm_name in list(self.benchmark_models.keys()):
+                factory = dict(BENCHMARK_MODEL_FACTORIES)[bm_name]
+                fold_bm = factory()
+                fold_bm.fit(train_df.iloc[train_idx], y_tr)
+                val_df_fold_bm = train_df.iloc[val_idx]
+                bm_proba = fold_bm.predict_proba(val_df_fold_bm)[:, 1]
+                cv_probas[bm_name].extend(bm_proba.tolist())
+                fold_brier = brier_score_loss(fold_val_actuals, bm_proba)
+                cv_fold_briers[bm_name].append(fold_brier)
+                if len(set(fold_val_actuals)) >= 2:
+                    fold_auc = roc_auc_score(fold_val_actuals, bm_proba)
+                else:
+                    fold_auc = 0.5
+                cv_fold_aucs[bm_name].append(fold_auc)
 
             # LSTM CV
             if 'lstm' in all_model_names:
@@ -1483,6 +1721,13 @@ class RecessionEnsembleModel:
             self.calibrated_models['markov_switching'] = None
             cal_status = "built-in" if (self.markov_model and self.markov_model._calibrator_fitted) else "none"
             logger.info(f"  ⊘ markov_switching: uses {cal_status} isotonic calibration")
+
+        # Benchmark members are already published on a probability scale
+        # (Hamilton JHGDPBRINDX / Chauvet-Piger RECPROUSM156N) or fitted
+        # directly (Wright probit); skip post-hoc calibration.
+        for bm_name in self.benchmark_models:
+            self.calibrated_models[bm_name] = None
+            logger.info(f"  ⊘ {bm_name}: uses externally/directly calibrated probabilities")
 
         # LSTM: calibrate via isotonic regression on CV predictions
         # (class-weighted training produces biased probabilities that need recalibration)
@@ -2069,6 +2314,11 @@ class RecessionEnsembleModel:
         # Markov-switching prediction (uses raw DataFrame, not numpy array)
         if self.markov_model is not None and self.markov_model.fitted:
             predictions['markov_switching'] = self.markov_model.predict_proba(test_df)[:, 1]
+
+        # Benchmark ensemble members — externally calibrated / peer-model
+        # recession probabilities. Each reads its own columns from test_df.
+        for bm_name, bm in self.benchmark_models.items():
+            predictions[bm_name] = bm.predict_proba(test_df)[:, 1]
 
         # LSTM prediction (uses unscaled feature matrix, applies isotonic calibration)
         if self.lstm_model is not None and self.lstm_model.fitted:

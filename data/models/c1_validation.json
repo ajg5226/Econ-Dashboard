@@ -1,0 +1,371 @@
+{
+  "experiment_id": "C1",
+  "ran_at_utc": "2026-04-24T00:25:24.707488Z",
+  "git_sha_current": "6a19f29",
+  "branch": "experiment/C1-benchmark-models",
+  "parent_branch": "main",
+  "scope_policy": "1990-present",
+  "what_this_moves": "Dot-com peak (primary); GFC/S&L stability (secondary)",
+  "benchmark_members_added": [
+    "HamiltonBenchmark",
+    "ChauvetPigerBenchmark",
+    "WrightProbit"
+  ],
+  "reference_features_handling": "Reference columns (ref_JHGDPBRINDX, ref_RECPROUSM156N) were already excluded from ordinary feature selection at ensemble_model.py:949 (startswith('ref_') filter) before C1. Therefore no double-count: the reference series enter ONLY through the new benchmark model wrappers when --benchmark-members=on, and never as ordinary features for probit/RF/XGB. No code change needed for this.",
+  "cv_benchmark_scores": {
+    "hamilton_benchmark": {
+      "auc": 0.6311050061050061,
+      "pr_auc": 0.41056019528940524,
+      "brier": 0.13505451941984714,
+      "inv_brier": 7.404362326661376
+    },
+    "chauvet_piger_benchmark": {
+      "auc": 0.9497863247863249,
+      "pr_auc": 0.6997616948013774,
+      "brier": 0.1395038202247191,
+      "inv_brier": 7.168211093990631
+    },
+    "wright_probit": {
+      "auc": 0.5135497218830551,
+      "pr_auc": 0.20747301197996668,
+      "brier": 0.17753807461477145,
+      "inv_brier": 5.63256287197522
+    }
+  },
+  "reference_counterfactual_peaks": {
+    "sl": {
+      "window": [
+        "1990-07",
+        "1991-04"
+      ],
+      "hamilton_peak_raw_prob": 0.9702841,
+      "chauvet_piger_peak_raw_prob": 0.5974
+    },
+    "dot_com": {
+      "window": [
+        "2001-03",
+        "2001-12"
+      ],
+      "hamilton_peak_raw_prob": 0.8383430000000002,
+      "chauvet_piger_peak_raw_prob": 0.2878
+    },
+    "gfc": {
+      "window": [
+        "2007-12",
+        "2009-07"
+      ],
+      "hamilton_peak_raw_prob": 0.997,
+      "chauvet_piger_peak_raw_prob": 0.9976
+    },
+    "covid": {
+      "window": [
+        "2020-02",
+        "2020-05"
+      ],
+      "hamilton_peak_raw_prob": 1.0,
+      "chauvet_piger_peak_raw_prob": 1.0
+    }
+  },
+  "reference_counterfactual_note": "Raw Hamilton JHGDPBRINDX (\u00f7100) and Chauvet-Piger RECPROUSM156N peak probabilities during each recession window \u2014 these would be the benchmark members' actual outputs IF they were selected into the active ensemble. They are reported diagnostically; the _select_active_models gate in ensemble_model.py rejects them because their pooled CV PR-AUC (across 1970-present folds) is below 90% of probit's, even though they fire strongly during specific real recessions (see especially GFC / COVID ~1.0, and Hamilton ~0.84 during Dot-com 2001).",
+  "active_model_gate_diagnosis": "With benchmarks on, ALL 3 benchmark members are GATED OUT by the _select_active_models() filter (AUC within -10pp of best, PR-AUC within 90% of best, Brier within 2x of best). Best probit CV PR-AUC = 0.95; benchmarks CV PR-AUCs are Hamilton 0.41, Chauvet-Piger 0.70, Wright 0.21 \u2014 all below 0.855 (=0.95*0.90). Therefore the final ensemble contains only {probit, random_forest} with equal 0.5/0.5 weights, identical to the no-benchmarks run. This is why every in-scope metric delta is exactly 0.",
+  "variants": {
+    "no_benchmarks": {
+      "cv_results": {
+        "probit": {
+          "auc": 0.9826685660018992,
+          "pr_auc": 0.9473199250090685,
+          "brier": 0.0495846481362722,
+          "inv_brier": 20.16712572258371
+        },
+        "random_forest": {
+          "auc": 0.9575362908696242,
+          "pr_auc": 0.8871119018635971,
+          "brier": 0.08148122744651845,
+          "inv_brier": 12.272614916625328
+        },
+        "xgboost": {
+          "auc": 0.9279270112603445,
+          "pr_auc": 0.8003915619112444,
+          "brier": 0.12436381126761174,
+          "inv_brier": 8.040859707881287
+        },
+        "markov_switching": {
+          "auc": 0.8943155609822276,
+          "pr_auc": 0.6136802671787184,
+          "brier": 0.10261628008797893,
+          "inv_brier": 9.744947431296659
+        }
+      },
+      "cv_pr_auc_max_of_base": 0.9473199250090685,
+      "cv_auc_max_of_base": 0.9826685660018992,
+      "cv_probit_pr_auc": 0.9473199250090685,
+      "cv_probit_brier": 0.0495846481362722,
+      "cv_probit_auc": 0.9826685660018992,
+      "ensemble_weights": {
+        "probit": 0.5,
+        "random_forest": 0.5
+      },
+      "active_models": [
+        "probit",
+        "random_forest"
+      ],
+      "in_scope": {
+        "backtest_mean_auc": 0.847389166897176,
+        "backtest_mean_brier": 0.20477678536221322,
+        "backtest_mean_peak_prob": 0.572427679449111,
+        "recessions_detected": "3/4",
+        "recessions_tested": 4,
+        "mean_lead_time_detected": 2.2996057818659654,
+        "sl_peak": 0.7272209583384918,
+        "sl_lead_months": 5.946123521681997,
+        "sl_auc": 0.8866396761133603,
+        "sl_crossed": true,
+        "dot_com_peak": 0.2299242724405124,
+        "dot_com_lead_months": null,
+        "dot_com_auc": 0.9412955465587044,
+        "dot_com_crossed": false,
+        "gfc_peak": 0.6713750020531697,
+        "gfc_lead_months": 6.964520367936925,
+        "gfc_auc": 0.9977116704805492,
+        "gfc_crossed": true,
+        "covid_peak": 0.6611904849642702,
+        "covid_lead_months": -6.011826544021025,
+        "covid_auc": 0.5639097744360902,
+        "covid_crossed": true
+      },
+      "full_history": {
+        "backtest_mean_auc": 0.8729487720834973,
+        "backtest_mean_brier": 0.22879843648175438,
+        "backtest_mean_peak_prob": 0.5242337239001892,
+        "recessions_detected": "5/6",
+        "recessions_tested": 6,
+        "mean_lead_time_detected": 1.3797634691195793,
+        "volcker_i_peak": 0.3571797208427863,
+        "volcker_i_lead_months": 6.044678055190539,
+        "volcker_i_auc": 0.8794642857142857,
+        "volcker_i_crossed": true,
+        "volcker_ii_peak": 0.4985119047619047,
+        "volcker_ii_lead_months": -6.044678055190539,
+        "volcker_ii_auc": 0.9686716791979948,
+        "volcker_ii_crossed": true,
+        "sl_peak": 0.7272209583384918,
+        "sl_lead_months": 5.946123521681997,
+        "sl_auc": 0.8866396761133603,
+        "sl_crossed": true,
+        "dot_com_peak": 0.2299242724405124,
+        "dot_com_lead_months": null,
+        "dot_com_auc": 0.9412955465587044,
+        "dot_com_crossed": false,
+        "gfc_peak": 0.6713750020531697,
+        "gfc_lead_months": 6.964520367936925,
+        "gfc_auc": 0.9977116704805492,
+        "gfc_crossed": true,
+        "covid_peak": 0.6611904849642702,
+        "covid_lead_months": -6.011826544021025,
+        "covid_auc": 0.5639097744360902,
+        "covid_crossed": true
+      },
+      "leave_one_out_brier": {
+        "reference_ensemble_type": "equal-weighted across ALL Prob_* members",
+        "reference_brier": 0.0657052503262916,
+        "reference_auc": 0.671541057367829,
+        "reference_pr_auc": 0.14443879074927463,
+        "leave_one_out": {
+          "Probit": {
+            "brier_without_member": 0.06451551738963089,
+            "brier_delta": -0.0011897329366607062,
+            "auc_without_member": 0.6400449943757031
+          },
+          "RandomForest": {
+            "brier_without_member": 0.07676200244288019,
+            "brier_delta": 0.011056752116588589,
+            "auc_without_member": 0.6771653543307087
+          },
+          "XGBoost": {
+            "brier_without_member": 0.07602302780502851,
+            "brier_delta": 0.010317777478736911,
+            "auc_without_member": 0.6743532058492689
+          },
+          "MarkovSwitching": {
+            "brier_without_member": 0.05443955666995421,
+            "brier_delta": -0.011265693656337387,
+            "auc_without_member": 0.7148481439820022
+          }
+        }
+      },
+      "dma_weights_pre_shrinkage": {},
+      "static_weights": {}
+    },
+    "with_benchmarks": {
+      "cv_results": {
+        "probit": {
+          "auc": 0.9826685660018992,
+          "pr_auc": 0.9473199250090685,
+          "brier": 0.0495846481362722,
+          "inv_brier": 20.16712572258371
+        },
+        "random_forest": {
+          "auc": 0.9575362908696242,
+          "pr_auc": 0.8871119018635971,
+          "brier": 0.08148122744651844,
+          "inv_brier": 12.27261491662533
+        },
+        "xgboost": {
+          "auc": 0.9279270112603445,
+          "pr_auc": 0.8003915619112444,
+          "brier": 0.12436381126761174,
+          "inv_brier": 8.040859707881287
+        },
+        "markov_switching": {
+          "auc": 0.8943155609822276,
+          "pr_auc": 0.6136802671787184,
+          "brier": 0.10261628008797893,
+          "inv_brier": 9.744947431296659
+        },
+        "hamilton_benchmark": {
+          "auc": 0.6311050061050061,
+          "pr_auc": 0.41056019528940524,
+          "brier": 0.13505451941984714,
+          "inv_brier": 7.404362326661376
+        },
+        "chauvet_piger_benchmark": {
+          "auc": 0.9497863247863249,
+          "pr_auc": 0.6997616948013774,
+          "brier": 0.1395038202247191,
+          "inv_brier": 7.168211093990631
+        },
+        "wright_probit": {
+          "auc": 0.5135497218830551,
+          "pr_auc": 0.20747301197996668,
+          "brier": 0.17753807461477145,
+          "inv_brier": 5.63256287197522
+        }
+      },
+      "cv_pr_auc_max_of_base": 0.9473199250090685,
+      "cv_auc_max_of_base": 0.9826685660018992,
+      "cv_probit_pr_auc": 0.9473199250090685,
+      "cv_probit_brier": 0.0495846481362722,
+      "cv_probit_auc": 0.9826685660018992,
+      "ensemble_weights": {
+        "probit": 0.5,
+        "random_forest": 0.5
+      },
+      "active_models": [
+        "probit",
+        "random_forest"
+      ],
+      "in_scope": {
+        "backtest_mean_auc": 0.847389166897176,
+        "backtest_mean_brier": 0.20477678536221322,
+        "backtest_mean_peak_prob": 0.572427679449111,
+        "recessions_detected": "3/4",
+        "recessions_tested": 4,
+        "mean_lead_time_detected": 2.2996057818659654,
+        "sl_peak": 0.7272209583384918,
+        "sl_lead_months": 5.946123521681997,
+        "sl_auc": 0.8866396761133603,
+        "sl_crossed": true,
+        "dot_com_peak": 0.2299242724405124,
+        "dot_com_lead_months": null,
+        "dot_com_auc": 0.9412955465587044,
+        "dot_com_crossed": false,
+        "gfc_peak": 0.6713750020531699,
+        "gfc_lead_months": 6.964520367936925,
+        "gfc_auc": 0.9977116704805492,
+        "gfc_crossed": true,
+        "covid_peak": 0.6611904849642702,
+        "covid_lead_months": -6.011826544021025,
+        "covid_auc": 0.5639097744360902,
+        "covid_crossed": true
+      },
+      "full_history": {
+        "backtest_mean_auc": 0.8729487720834973,
+        "backtest_mean_brier": 0.22879843648175438,
+        "backtest_mean_peak_prob": 0.5242337239001893,
+        "recessions_detected": "5/6",
+        "recessions_tested": 6,
+        "mean_lead_time_detected": 1.3797634691195793,
+        "volcker_i_peak": 0.3571797208427865,
+        "volcker_i_lead_months": 6.044678055190539,
+        "volcker_i_auc": 0.8794642857142857,
+        "volcker_i_crossed": true,
+        "volcker_ii_peak": 0.4985119047619047,
+        "volcker_ii_lead_months": -6.044678055190539,
+        "volcker_ii_auc": 0.9686716791979948,
+        "volcker_ii_crossed": true,
+        "sl_peak": 0.7272209583384918,
+        "sl_lead_months": 5.946123521681997,
+        "sl_auc": 0.8866396761133603,
+        "sl_crossed": true,
+        "dot_com_peak": 0.2299242724405124,
+        "dot_com_lead_months": null,
+        "dot_com_auc": 0.9412955465587044,
+        "dot_com_crossed": false,
+        "gfc_peak": 0.6713750020531699,
+        "gfc_lead_months": 6.964520367936925,
+        "gfc_auc": 0.9977116704805492,
+        "gfc_crossed": true,
+        "covid_peak": 0.6611904849642702,
+        "covid_lead_months": -6.011826544021025,
+        "covid_auc": 0.5639097744360902,
+        "covid_crossed": true
+      },
+      "leave_one_out_brier": {
+        "reference_ensemble_type": "equal-weighted across ALL Prob_* members",
+        "reference_brier": 0.0813364722367698,
+        "reference_auc": 0.7694038245219347,
+        "reference_pr_auc": 0.1678256892163876,
+        "leave_one_out": {
+          "Probit": {
+            "brier_without_member": 0.08461576492649067,
+            "brier_delta": 0.003279292689720867,
+            "auc_without_member": 0.7615298087739033
+          },
+          "RandomForest": {
+            "brier_without_member": 0.09397954295968249,
+            "brier_delta": 0.01264307072291268,
+            "auc_without_member": 0.7772778402699663
+          },
+          "XGBoost": {
+            "brier_without_member": 0.09313360000706654,
+            "brier_delta": 0.011797127770296734,
+            "auc_without_member": 0.7772778402699663
+          },
+          "MarkovSwitching": {
+            "brier_without_member": 0.07753227164658304,
+            "brier_delta": -0.003804200590186768,
+            "auc_without_member": 0.829021372328459
+          },
+          "HamiltonBenchmark": {
+            "brier_without_member": 0.0949189767837903,
+            "brier_delta": 0.013582504547020494,
+            "auc_without_member": 0.7097862767154106
+          },
+          "ChauvetPigerBenchmark": {
+            "brier_without_member": 0.06843808139468494,
+            "brier_delta": -0.01289839084208487,
+            "auc_without_member": 0.7154105736782902
+          },
+          "WrightProbit": {
+            "brier_without_member": 0.06857193182387637,
+            "brier_delta": -0.012764540412893433,
+            "auc_without_member": 0.7840269966254217
+          }
+        }
+      },
+      "dma_weights_pre_shrinkage": {},
+      "static_weights": {}
+    }
+  },
+  "verdict": "DISCARD",
+  "verdict_reason": "all 3 benchmarks gated out of ensemble AND Dot-com peak unchanged",
+  "dot_com_peak_delta": 0.0,
+  "gfc_lead_delta": 0.0,
+  "sml_lead_delta": 0.0,
+  "covid_peak_delta": 0.0,
+  "in_scope_backtest_auc_delta": 0.0,
+  "benchmarks_with_weight_ge_5pct": {},
+  "benchmarks_with_any_weight": {},
+  "benchmark_helps_loo_brier": true,
+  "in_scope_detection": "3/4"
+}

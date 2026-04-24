@@ -528,6 +528,14 @@ def _train_model_bundle(*, df_final: pd.DataFrame, df_features: pd.DataFrame,
         data_dict['Prob_MarkovSwitching'] = predictions['markov_switching']
     if 'lstm' in predictions:
         data_dict['Prob_LSTM'] = predictions['lstm']
+    # C1 — benchmark members (if enabled)
+    for bm_name, bm_col in [
+        ('hamilton_benchmark', 'Prob_HamiltonBenchmark'),
+        ('chauvet_piger_benchmark', 'Prob_ChauvetPigerBenchmark'),
+        ('wright_probit', 'Prob_WrightProbit'),
+    ]:
+        if bm_name in predictions:
+            data_dict[bm_col] = predictions[bm_name]
 
     predictions_df = pd.DataFrame(data_dict)
 
@@ -551,6 +559,13 @@ def _train_model_bundle(*, df_final: pd.DataFrame, df_features: pd.DataFrame,
             nowcast_dict['Prob_MarkovSwitching'] = nowcast_preds['markov_switching']
         if 'lstm' in nowcast_preds:
             nowcast_dict['Prob_LSTM'] = nowcast_preds['lstm']
+        for bm_name, bm_col in [
+            ('hamilton_benchmark', 'Prob_HamiltonBenchmark'),
+            ('chauvet_piger_benchmark', 'Prob_ChauvetPigerBenchmark'),
+            ('wright_probit', 'Prob_WrightProbit'),
+        ]:
+            if bm_name in nowcast_preds:
+                nowcast_dict[bm_col] = nowcast_preds[bm_name]
 
         nowcast_pred_df = pd.DataFrame(nowcast_dict)
         predictions_df = pd.concat([predictions_df, nowcast_pred_df], ignore_index=True)
@@ -753,7 +768,7 @@ def _persist_model_bundle(*, bundle: dict, models_dir: Path, horizon_months: int
 def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
                    threshold_override=None, strict_vintage_search=False,
                    search_only=False, feature_variant="hybrid",
-                   variant_output_dir=None):
+                   variant_output_dir=None, benchmark_members="off"):
     """
     Main update job function
 
@@ -769,6 +784,10 @@ def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
         variant_output_dir: Optional override for the models output directory.
             When set, artifacts are written to this directory instead of the production
             ``data/models/`` path — used by the B1 harness to isolate variant runs.
+        benchmark_members: C1 bake-off flag. ``'on'`` adds three peer-model ensemble
+            members (Hamilton JHGDPBRINDX wrapper, Chauvet-Piger RECPROUSM156N
+            wrapper, Wright 2006 probit); ``'off'`` (default) preserves current
+            production behavior.
     """
     runtime_config = load_runtime_config()
     horizon_months = runtime_config['horizon_months'] if horizon_months is None else horizon_months
@@ -781,7 +800,8 @@ def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
     logger.info(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info(
         "Config | horizon=%s train_end=%s max_features=%s threshold_override=%s "
-        "strict_vintage_search=%s search_only=%s feature_variant=%s variant_output_dir=%s",
+        "strict_vintage_search=%s search_only=%s feature_variant=%s variant_output_dir=%s "
+        "benchmark_members=%s",
         horizon_months,
         train_end_date,
         max_features,
@@ -790,6 +810,7 @@ def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
         search_only,
         feature_variant,
         variant_output_dir,
+        benchmark_members,
     )
     logger.info("=" * 100)
 
@@ -898,6 +919,11 @@ def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
         incumbent_snapshot = _load_incumbent_snapshot(models_dir)
         selection_metadata = None
         selected_model_config = {}
+        # C1 — propagate --benchmark-members into model_config so
+        # RecessionEnsembleModel picks up the flag.
+        benchmark_enabled = str(benchmark_members).lower() == "on"
+        if benchmark_enabled:
+            selected_model_config['benchmark_members_enabled'] = True
         selected_n_cv_splits = 5
         selected_max_features = max_features
 
@@ -1214,6 +1240,12 @@ if __name__ == "__main__":
     parser.add_argument("--variant-output-dir", type=str, default=None,
                         help=("Optional override for models output directory — used by "
                               "the B1 variant harness to avoid clobbering production artifacts."))
+    parser.add_argument("--benchmark-members", type=str, default="off",
+                        choices=("on", "off"),
+                        help=("C1 benchmark ensemble members. 'on' adds Hamilton "
+                              "JHGDPBRINDX, Chauvet-Piger RECPROUSM156N, and a "
+                              "Wright probit as ensemble members; 'off' (default) "
+                              "preserves current production behavior."))
 
     args = parser.parse_args()
 
@@ -1226,6 +1258,7 @@ if __name__ == "__main__":
         search_only=args.search_only,
         feature_variant=args.feature_variant,
         variant_output_dir=args.variant_output_dir,
+        benchmark_members=args.benchmark_members,
     )
 
     sys.exit(0 if success else 1)

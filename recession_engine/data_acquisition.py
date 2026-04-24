@@ -176,16 +176,31 @@ class RecessionDataAcquisition:
                 except Exception as e:
                     logger.warning(f"  ✗ Failed {series_id}: {str(e)}")
 
-        # Fetch recession indicator
-        try:
-            recession = self.fred.get_series(
-                'USREC',
-                observation_start=start_date,
-                observation_end=end_date
-            )
+        # Fetch recession indicator — critical series, retry transient FRED errors.
+        import time as _time
+        recession = None
+        last_err = None
+        for attempt in range(1, 5):  # up to 4 attempts total
+            try:
+                recession = self.fred.get_series(
+                    'USREC',
+                    observation_start=start_date,
+                    observation_end=end_date,
+                )
+                break
+            except Exception as e:
+                last_err = e
+                logger.warning(
+                    "USREC fetch attempt %d/4 failed (%s); sleeping %ds then retrying",
+                    attempt, e, attempt * 5,
+                )
+                _time.sleep(attempt * 5)
+        if recession is not None:
             all_data['RECESSION'] = recession
-        except Exception as e:
-            logger.error(f"Failed recession indicator: {str(e)}")
+        else:
+            logger.error(
+                "Failed recession indicator after retries: %s", last_err
+            )
 
         df = pd.DataFrame(all_data)
         logger.info(f"Fetched: {len(df)} observations, {len(df.columns)} series")
