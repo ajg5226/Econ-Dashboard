@@ -1,0 +1,383 @@
+{
+  "verdict": "KEEP",
+  "branch": "fix/audit1-sweep",
+  "branch_head_sha": "b417918b452f68cb8b10503c07cd08d9c1c6041b",
+  "base_sha": "d9a9390",
+  "baseline_compared_to": "baseline_0411da9",
+  "commits": [
+    {
+      "sha": "92705b0",
+      "title": "AUDIT-1 FIX 1 + 2: deterministic feature tie-break + threshold plateau diagnostics"
+    },
+    {
+      "sha": "b417918",
+      "title": "AUDIT-1 FIX 2 wire + 3 + 4 + 5: plateau manifest, JOLTS lag, Lead_Months_Fixed primary, training publication lags"
+    }
+  ],
+  "fixes_applied": [
+    {
+      "id": "FIX-1",
+      "severity": "MEDIUM",
+      "summary": "deterministic feature-selection tie-break (alphabetical)"
+    },
+    {
+      "id": "FIX-2",
+      "severity": "HIGH",
+      "summary": "threshold-plateau-width diagnostics into run_manifest"
+    },
+    {
+      "id": "FIX-3",
+      "severity": "LOW",
+      "summary": "JOLTS publication lag 2 -> 3 months"
+    },
+    {
+      "id": "FIX-4",
+      "severity": "HIGH",
+      "summary": "Lead_Months_Fixed primary in backtest_summary"
+    },
+    {
+      "id": "FIX-5",
+      "severity": "HIGH",
+      "summary": "publication lags applied to training data path"
+    }
+  ],
+  "manifest": {
+    "baseline": {
+      "decision_threshold": 0.3,
+      "selected_features_count": 50,
+      "active_models": [
+        "probit",
+        "random_forest"
+      ],
+      "ensemble_weights": {
+        "probit": 0.5,
+        "random_forest": 0.5
+      },
+      "threshold_diagnostics": null
+    },
+    "post_fix": {
+      "decision_threshold": 0.34,
+      "selected_features_count": 50,
+      "active_models": [
+        "probit",
+        "random_forest"
+      ],
+      "ensemble_weights": {
+        "probit": 0.5,
+        "random_forest": 0.5
+      },
+      "threshold_diagnostics": {
+        "winner_threshold": 0.34,
+        "winner_f1": 0.900433,
+        "threshold_plateau_width_01": 4,
+        "threshold_plateau_width_005": 3,
+        "threshold_plateau_range": [
+          0.33,
+          0.36
+        ],
+        "threshold_plateau_span_01": 0.03,
+        "is_flat_plateau_warning": false
+      }
+    }
+  },
+  "ensemble_test_metrics": {
+    "baseline": {
+      "AUC": 0.7221597300337458,
+      "PR_AUC": 0.1957601267107828,
+      "Brier": 0.0586669587547268,
+      "LogLoss": 0.2149430224981982,
+      "Precision": 0.1818181818181818,
+      "Recall": 0.2857142857142857,
+      "F1": 0.2222222222222222,
+      "Accuracy": 0.8955223880597015,
+      "Sensitivity": 0.2857142857142857,
+      "Specificity": 0.9291338582677166,
+      "Youdens_J": 0.2148481439820022
+    },
+    "post_fix": {
+      "AUC": 0.6749156355455568,
+      "PR_AUC": 0.212778326971772,
+      "Brier": 0.0650637370497914,
+      "LogLoss": 0.2360566031454715,
+      "Precision": 0.1,
+      "Recall": 0.1428571428571428,
+      "F1": 0.1176470588235294,
+      "Accuracy": 0.8880597014925373,
+      "Sensitivity": 0.1428571428571428,
+      "Specificity": 0.9291338582677166,
+      "Youdens_J": 0.0719910011248594
+    },
+    "delta": {
+      "AUC": -0.047244094488189003,
+      "PR_AUC": 0.017018200260989214,
+      "Brier": 0.0063967782950646035,
+      "LogLoss": 0.02111358064727331,
+      "Precision": -0.08181818181818179,
+      "Recall": -0.1428571428571429,
+      "F1": -0.10457516339869281,
+      "Accuracy": -0.007462686567164201,
+      "Sensitivity": -0.1428571428571429,
+      "Specificity": 0.0,
+      "Youdens_J": -0.1428571428571428
+    }
+  },
+  "backtest": {
+    "baseline": [
+      {
+        "Recession": "Oil Crisis (1973-75)",
+        "AUC": null,
+        "Threshold": null,
+        "Lead_Months": null,
+        "Fixed_Threshold": null,
+        "Lead_Months_Fixed": null,
+        "Crossed_Threshold": null,
+        "Crossed_Threshold_Fixed": null
+      },
+      {
+        "Recession": "Volcker I (1980)",
+        "AUC": 0.9017857142857144,
+        "Threshold": 0.21,
+        "Lead_Months": 6.044678055190539,
+        "Fixed_Threshold": 0.41,
+        "Lead_Months_Fixed": null,
+        "Crossed_Threshold": true,
+        "Crossed_Threshold_Fixed": false
+      },
+      {
+        "Recession": "Volcker II (1981-82)",
+        "AUC": 0.956140350877193,
+        "Threshold": 0.41,
+        "Lead_Months": -6.044678055190539,
+        "Fixed_Threshold": 0.41,
+        "Lead_Months_Fixed": -6.044678055190539,
+        "Crossed_Threshold": true,
+        "Crossed_Threshold_Fixed": true
+      },
+      {
+        "Recession": "S&L Crisis (1990-91)",
+        "AUC": 0.8340080971659919,
+        "Threshold": 0.12,
+        "Lead_Months": 6.964520367936925,
+        "Fixed_Threshold": 0.41,
+        "Lead_Months_Fixed": 6.964520367936925,
+        "Crossed_Threshold": true,
+        "Crossed_Threshold_Fixed": true
+      },
+      {
+        "Recession": "Dot-com (2001)",
+        "AUC": 0.95748987854251,
+        "Threshold": 0.28,
+        "Lead_Months": null,
+        "Fixed_Threshold": 0.41,
+        "Lead_Months_Fixed": null,
+        "Crossed_Threshold": false,
+        "Crossed_Threshold_Fixed": false
+      },
+      {
+        "Recession": "GFC (2007-09)",
+        "AUC": 0.9977116704805492,
+        "Threshold": 0.34,
+        "Lead_Months": -1.0183968462549278,
+        "Fixed_Threshold": 0.41,
+        "Lead_Months_Fixed": -1.0183968462549278,
+        "Crossed_Threshold": true,
+        "Crossed_Threshold_Fixed": true
+      },
+      {
+        "Recession": "COVID (2020)",
+        "AUC": 0.5827067669172933,
+        "Threshold": 0.38,
+        "Lead_Months": -6.011826544021025,
+        "Fixed_Threshold": 0.41,
+        "Lead_Months_Fixed": -6.011826544021025,
+        "Crossed_Threshold": true,
+        "Crossed_Threshold_Fixed": true
+      }
+    ],
+    "post_fix": [
+      {
+        "Recession": "Oil Crisis (1973-75)",
+        "AUC": null,
+        "Threshold": null,
+        "Lead_Months": null,
+        "Fixed_Threshold": null,
+        "Lead_Months_Fixed": null,
+        "Crossed_Threshold": null,
+        "Crossed_Threshold_Fixed": null
+      },
+      {
+        "Recession": "Volcker I (1980)",
+        "AUC": 0.8616071428571428,
+        "Threshold": 0.21,
+        "Lead_Months": -2.0039421813403417,
+        "Fixed_Threshold": 0.41,
+        "Lead_Months_Fixed": null,
+        "Crossed_Threshold": true,
+        "Crossed_Threshold_Fixed": false
+      },
+      {
+        "Recession": "Volcker II (1981-82)",
+        "AUC": 0.9611528822055138,
+        "Threshold": 0.41,
+        "Lead_Months": -6.044678055190539,
+        "Fixed_Threshold": 0.41,
+        "Lead_Months_Fixed": -6.044678055190539,
+        "Crossed_Threshold": true,
+        "Crossed_Threshold_Fixed": true
+      },
+      {
+        "Recession": "S&L Crisis (1990-91)",
+        "AUC": 0.9352226720647774,
+        "Threshold": 0.19,
+        "Lead_Months": 6.964520367936925,
+        "Fixed_Threshold": 0.41,
+        "Lead_Months_Fixed": 5.946123521681997,
+        "Crossed_Threshold": true,
+        "Crossed_Threshold_Fixed": true
+      },
+      {
+        "Recession": "Dot-com (2001)",
+        "AUC": 0.9473684210526316,
+        "Threshold": 0.26,
+        "Lead_Months": null,
+        "Fixed_Threshold": 0.41,
+        "Lead_Months_Fixed": null,
+        "Crossed_Threshold": false,
+        "Crossed_Threshold_Fixed": false
+      },
+      {
+        "Recession": "GFC (2007-09)",
+        "AUC": 0.982837528604119,
+        "Threshold": 0.3,
+        "Lead_Months": 6.964520367936925,
+        "Fixed_Threshold": 0.41,
+        "Lead_Months_Fixed": 6.964520367936925,
+        "Crossed_Threshold": true,
+        "Crossed_Threshold_Fixed": true
+      },
+      {
+        "Recession": "COVID (2020)",
+        "AUC": 0.7030075187969925,
+        "Threshold": 0.27,
+        "Lead_Months": -6.011826544021025,
+        "Fixed_Threshold": 0.41,
+        "Lead_Months_Fixed": -6.011826544021025,
+        "Crossed_Threshold": true,
+        "Crossed_Threshold_Fixed": true
+      }
+    ]
+  },
+  "features": {
+    "baseline_count": 50,
+    "post_fix_count": 50,
+    "overlap": [
+      "AT_RISK_DIFFUSION",
+      "AT_RISK_DIFFUSION_WEIGHTED",
+      "DURABLES_Z",
+      "GOODS_DECLINE_FLAG",
+      "HOUSE_PRICE_DECLINING",
+      "NEAR_TERM_FORWARD_SPREAD",
+      "NTFS_inverted",
+      "RECESSION_CONFIRM_2OF3",
+      "RESIDENTIAL_INV_MOM3",
+      "RESIDENTIAL_INV_YOY",
+      "RESIDENTIAL_INV_Z",
+      "SAHM_INDICATOR",
+      "SAHM_TRIGGER",
+      "SECTORAL_DIVERGENCE",
+      "SLOOS_ACUTE_TIGHTENING",
+      "SLOOS_TIGHTENING_FLAG",
+      "SOS_INDICATOR",
+      "SOS_TRIGGER",
+      "TP_ADJ_SPREAD_inverted",
+      "coincident_IURSA_3M",
+      "coincident_IURSA_6M",
+      "coincident_PAYEMS_Vol6M",
+      "coincident_UNRATE_3M",
+      "coincident_UNRATE_6M",
+      "financial_ANFCI",
+      "financial_ANFCI_MA6",
+      "glr_CUMFNS_3M",
+      "leading_ICSA_6M",
+      "leading_ICSA_YoY",
+      "leading_PNFI_MoM",
+      "leading_PRFI_MoM",
+      "leading_T10Y3M",
+      "leading_T10Y3M_MA6",
+      "leading_T10Y3M_inv_duration",
+      "leading_T10Y3M_inverted",
+      "leading_TB3MS_Vol6M",
+      "leading_USSLIND",
+      "leading_USSLIND_AT_RISK"
+    ],
+    "overlap_count": 38,
+    "dropped": [
+      "FFR_STANCE",
+      "FFR_x_SPREAD",
+      "NFCI_Z",
+      "coincident_CMRMTSPL_6M",
+      "coincident_INDPRO_6M",
+      "coincident_PAYEMS_6M",
+      "coincident_UNEMPLOY_YoY",
+      "financial_NFCI",
+      "financial_NFCI_MA3",
+      "leading_PERMIT_6M",
+      "monetary_DFF",
+      "monetary_DFF_MA6"
+    ],
+    "added": [
+      "GOODS_YoY_MINUS_SERV_YoY",
+      "RES_VS_NONRES_SPREAD",
+      "SOS_MOMENTUM",
+      "coincident_IURSA_YoY",
+      "coincident_USGOOD_3M",
+      "coincident_USGOOD_MoM",
+      "glr_CUMFNS_6M",
+      "leading_PERMIT_3M",
+      "leading_PERMIT_YoY",
+      "leading_TB3MS_MA6",
+      "leading_UMCSENT_6M",
+      "leading_UMCSENT_YoY"
+    ]
+  },
+  "gates": {
+    "all_five_fixes_applied": {
+      "required": 5,
+      "observed": 5,
+      "pass": true
+    },
+    "self_test_passes": {
+      "required": true,
+      "observed": true,
+      "pass": true
+    },
+    "update_job_completes": {
+      "required": true,
+      "observed": true,
+      "pass": true
+    },
+    "recession_detection_4_of_6_min": {
+      "required": 4,
+      "observed": 5,
+      "pass": true
+    },
+    "gfc_lead_fixed_041_gte_neg2": {
+      "required": -2.0,
+      "observed": 6.964520367936925,
+      "pass": true
+    },
+    "cv_pr_auc_drop_le_20pp": {
+      "baseline": 0.1957601267107828,
+      "post_fix": 0.212778326971772,
+      "delta": 0.017018200260989214,
+      "pass": true
+    },
+    "no_new_test_failures": {
+      "required": 0,
+      "observed": 0,
+      "tests_total": 36,
+      "tests_passed": 36,
+      "pass": true
+    }
+  }
+}
