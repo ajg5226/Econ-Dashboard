@@ -1,6 +1,6 @@
 # C5 retroactive threshold-stability analysis
 
-Generated: 2026-04-24T15:18:14.057541Z  |  Git SHA: `3f47774643d1692feaa2f5166bf4bb76fae7de09`  |  Fixed threshold: **0.41**
+Generated: 2026-04-24T15:20:26.475983Z  |  Git SHA: `51a7b6a948317da8ebc16f484e26cb67196bd894`  |  Fixed threshold: **0.41**
 
 Reference baseline: `data/models/baseline_efb307e/threshold.json`. All challenger lead times below are reported at the baseline fixed threshold using the bound-based estimator in `recession_engine.threshold_stability` (historical CSVs don't preserve per-origin probability trajectories).
 

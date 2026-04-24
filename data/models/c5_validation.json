@@ -1,8 +1,8 @@
 {
   "experiment": "C5",
   "title": "Threshold stability gate",
-  "generated_at_utc": "2026-04-24T15:18:14.057541Z",
-  "git_sha": "3f47774643d1692feaa2f5166bf4bb76fae7de09",
+  "generated_at_utc": "2026-04-24T15:20:26.475983Z",
+  "git_sha": "51a7b6a948317da8ebc16f484e26cb67196bd894",
   "verdict": "KEEP",
   "description": "Ship the fixed-threshold re-scoring utility + retroactive gate. Future experiments evaluate challenger lead time at the frozen baseline threshold in addition to the per-variant F1-optimal threshold, preventing the B3/C3/B5 class of threshold-shift measurement artifacts.",
   "fixed_threshold": 0.41,
