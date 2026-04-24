@@ -367,5 +367,6 @@
   "benchmarks_with_weight_ge_5pct": {},
   "benchmarks_with_any_weight": {},
   "benchmark_helps_loo_brier": true,
-  "in_scope_detection": "3/4"
+  "in_scope_detection": "3/4",
+  "git_sha_post_commit": "12bafa3"
 }
