@@ -42,3 +42,26 @@ METHODOLOGY:
   - Ajello et al. (2022) [term premium], Grigoli & Sandri (2024) [house prices]
   - Scavette & O'Trakoun (2025) [SOS], Leamer (2024) [res. investment]
 ================================================================================
+
+================================================================================
+SECONDARY SIGNAL — 18 MONTHS FORWARD (A3 horizon)
+================================================================================
+As of: 2026-04-30
+Ensemble probability (18M forward): 9.1%
+Decision threshold (18M):          18.0%
+Gap vs threshold:                  -8.9pp
+Signal:                            CALM (below 18M threshold)
+
+Active models: probit, random_forest, xgboost
+Weights:       probit=0.33, random_forest=0.33, xgboost=0.33
+Training CV:   AUC 0.696, PR-AUC 0.249
+
+The 18M horizon is a secondary signal added post-A3. It asks:
+"Is a recession likely to start within the next 18 months?"
+A3 established (historical holdout) that 18M forward-window
+predictions surface stronger peaks for Dot-com / S&L / GFC
+than 6M does — useful for early-stage monitoring. The 6M
+signal above remains the primary, more time-specific forecast.
+
+Model artifacts: data/models/horizon_18m/ (git SHA 0a8999b0)
+================================================================================
