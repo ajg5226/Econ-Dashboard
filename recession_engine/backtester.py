@@ -110,8 +110,13 @@ PUBLICATION_LAGS = {
     'leading_PCDG': 1,           # BEA personal consumption — ~1 month lag
     'leading_PNFI': 2,           # BEA quarterly, interpolated monthly — ~2 month lag
     # B2 labor block additions
-    'coincident_JTSJOL': 2,      # JOLTS openings — ~6 week release cadence
-    'coincident_JTSQUR': 2,      # JOLTS quits rate — ~6 week release cadence
+    # FIX 3 (AUDIT-1 LOW #7): JOLTS lag 2 -> 3 months. BLS JOLTS publishes
+    # ~6-7 weeks after the reference month, so at or near month-end a 2-month
+    # lag is mildly optimistic. 3 months reflects realistic real-time
+    # availability for nowcasts and aligns the training / backtest / live
+    # information sets more honestly.
+    'coincident_JTSJOL': 3,      # JOLTS openings — ~6-7 week release cadence
+    'coincident_JTSQUR': 3,      # JOLTS quits rate — ~6-7 week release cadence
     'coincident_CIVPART': 1,     # BLS Employment Situation
     'coincident_EMRATIO': 1,     # BLS Employment Situation
     'coincident_USGOOD': 1,      # BLS Current Employment Statistics
@@ -124,6 +129,45 @@ PUBLICATION_LAGS = {
     'financial_DRSDCILM': 1,     # SLOOS demand expectations (Large/Medium)
     'financial_TOTALSL': 1,      # Consumer credit outstanding (monthly, ~5 wk lag)
 }
+
+
+def apply_publication_lags(df_raw: pd.DataFrame,
+                           lags: dict | None = None,
+                           *,
+                           default_lag: int = 1) -> pd.DataFrame:
+    """Apply publication-lag NaN masking to raw indicator panels.
+
+    FIX 5 (AUDIT-1 H2): training now uses this helper to align its information
+    set with the vintage-replay backtest and live scoring. At time T, a feature
+    with publication lag L is unknown for T-L+1 .. T and must be NaN there.
+    This emulates the real-time information set available to a forecaster
+    sitting at T — see AUDIT-1 finding H2 for the motivation and the perfect-
+    foresight regression it prevents.
+
+    Args:
+        df_raw: DataFrame indexed by date (typically month-end). Columns are
+            indicator names used to look up per-series lag in ``lags``.
+        lags: Mapping from column name to publication lag in months. Columns
+            not present in the mapping use ``default_lag``. Defaults to the
+            module-level ``PUBLICATION_LAGS`` dict.
+        default_lag: Months of lag to assume for columns missing from ``lags``.
+
+    Returns:
+        A copy of ``df_raw`` with the last ``lag`` rows of each column set to
+        NaN (except the ``RECESSION`` column, which is an outcome label and
+        not subject to publication-lag masking).
+    """
+    if lags is None:
+        lags = PUBLICATION_LAGS
+    df_vintage = df_raw.copy()
+    for col in df_vintage.columns:
+        if col == 'RECESSION':
+            continue
+        lag = lags.get(col, default_lag)
+        if lag > 0:
+            col_idx = df_vintage.columns.get_loc(col)
+            df_vintage.iloc[-lag:, col_idx] = np.nan
+    return df_vintage
 
 
 DEFAULT_STRICT_SEARCH_ORIGINS = [
@@ -290,13 +334,13 @@ class RecessionBacktester:
         return float(arr[-1]) if arr.size else np.nan
 
     def _apply_publication_lags(self, df_raw: pd.DataFrame) -> pd.DataFrame:
-        """Simulate the information set available at a forecast date."""
-        df_vintage = df_raw.copy()
-        for col in df_vintage.columns:
-            lag = PUBLICATION_LAGS.get(col, 1)
-            if lag > 0 and col != 'RECESSION':
-                df_vintage.iloc[-lag:, df_vintage.columns.get_loc(col)] = np.nan
-        return df_vintage
+        """Simulate the information set available at a forecast date.
+
+        Kept as an instance method for backward compatibility with the vintage
+        replay code path; delegates to the module-level helper which is now
+        also used by the training pipeline (FIX 5).
+        """
+        return apply_publication_lags(df_raw, PUBLICATION_LAGS)
 
     def _build_realtime_feature_frame(self, df_raw: pd.DataFrame, as_of_date,
                                       use_alfred_core: bool = False,
@@ -1131,7 +1175,14 @@ class RecessionBacktester:
         )
 
     def summarize_results(self, backtest_df):
-        """Generate summary statistics from backtest results."""
+        """Generate summary statistics from backtest results.
+
+        FIX 4 (AUDIT-1 H1 extension): the fixed-threshold lead time is the
+        primary headline metric for stability across baselines. The own-
+        threshold ``Lead_Months`` stays in the summary but is explicitly
+        labeled as diagnostic so it isn't confused with the comparable
+        cross-baseline lead-time metric.
+        """
         summary = []
 
         if 'AUC' in backtest_df.columns:
@@ -1145,9 +1196,33 @@ class RecessionBacktester:
                 detected = valid[valid['Crossed_Threshold'] == True]
                 summary.append(f"Recessions detected (crossed threshold): {len(detected)}/{len(valid)}")
 
+                # Fixed-threshold lead time (primary metric — baseline-comparable)
+                if 'Lead_Months_Fixed' in valid.columns:
+                    lead_fixed = valid['Lead_Months_Fixed'].dropna()
+                    if len(lead_fixed) > 0:
+                        fixed_thr = None
+                        if 'Fixed_Threshold' in valid.columns:
+                            fixed_vals = valid['Fixed_Threshold'].dropna()
+                            if len(fixed_vals) > 0:
+                                fixed_thr = float(fixed_vals.iloc[0])
+                        if fixed_thr is not None:
+                            summary.append(
+                                f"Mean lead time (fixed threshold {fixed_thr:.3f}): "
+                                f"{lead_fixed.mean():.1f} months"
+                            )
+                        else:
+                            summary.append(
+                                f"Mean lead time (fixed threshold): {lead_fixed.mean():.1f} months"
+                            )
+
+                # Own-threshold lead time (secondary, diagnostic only — unstable
+                # baseline-to-baseline because of threshold plateau flips).
                 if 'Lead_Months' in valid.columns:
                     lead = valid['Lead_Months'].dropna()
                     if len(lead) > 0:
-                        summary.append(f"Mean lead time: {lead.mean():.0f} months")
+                        summary.append(
+                            f"Mean lead time (own-threshold, diagnostic): "
+                            f"{lead.mean():.1f} months"
+                        )
 
         return "\n".join(summary)

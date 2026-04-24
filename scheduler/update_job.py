@@ -38,7 +38,12 @@ if not os.environ.get('FRED_API_KEY'):
         pass
 
 from recession_engine.data_acquisition import RecessionDataAcquisition
-from recession_engine.backtester import DEFAULT_SEARCH_CANDIDATES, RecessionBacktester
+from recession_engine.backtester import (
+    DEFAULT_SEARCH_CANDIDATES,
+    PUBLICATION_LAGS,
+    RecessionBacktester,
+    apply_publication_lags,
+)
 from recession_engine.ensemble_model import RecessionEnsembleModel
 from recession_engine.glr_engine import GLRRegimeEngine
 from recession_engine.model_monitor import ModelMonitor
@@ -157,6 +162,18 @@ def _build_run_manifest(*, horizon_months, train_end_date, max_features,
         'latest_prediction_date': pd.to_datetime(predictions_df['Date'].max()).strftime('%Y-%m-%d'),
         'latest_known_outcome_date': latest_known_date,
     }
+
+    # FIX 2 (AUDIT-1): emit threshold-plateau-width diagnostics. Flagging a flat
+    # plateau (>=5 thresholds within 0.005 F1 of winner) makes the drift mode
+    # that caused the efb307e->0411da9 8-month GFC lead-time swing visible in
+    # the manifest. Reference: scripts/audit_patches/threshold_plateau_diagnostics.py.
+    plateau_diagnostics = getattr(model, 'threshold_plateau_diagnostics', {}) or {}
+    if plateau_diagnostics:
+        manifest['threshold_diagnostics'] = {
+            k: (list(v) if isinstance(v, tuple) else v)
+            for k, v in plateau_diagnostics.items()
+        }
+
     if selection_metadata:
         manifest['model_selection'] = selection_metadata
     return manifest
@@ -835,12 +852,26 @@ def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
 
         logger.info("✓ Raw data: %d months, %d indicators", df_raw.shape[0], df_raw.shape[1])
 
+        # FIX 5 (AUDIT-1 H2): apply publication lags to the raw panel BEFORE
+        # feature engineering so training sees the same information set that
+        # backtest and live scoring use. Previously training had "perfect
+        # foresight" macro data (e.g., PAYEMS for May at the same date live
+        # scoring only had PAYEMS for April). Aligning here removes that bias.
+        # Reference: `RecessionBacktester._apply_publication_lags` in backtester.py.
+        df_raw_lagged = apply_publication_lags(df_raw, PUBLICATION_LAGS)
+        lagged_nan_tail = int(df_raw_lagged.tail(6).isna().sum().sum())
+        logger.info(
+            "✓ Applied publication lags to training panel "
+            "(last-6-row NaN mask total: %d cells)",
+            lagged_nan_tail,
+        )
+
         # STEP 2: FEATURE ENGINEERING
         logger.info("=" * 100)
         logger.info("STEP 2: FEATURE ENGINEERING (at-risk, Sahm, spread dynamics)")
         logger.info("=" * 100)
 
-        df_features = acq.engineer_features(df_raw)
+        df_features = acq.engineer_features(df_raw_lagged)
         logger.info("✓ Engineered %d total columns", df_features.shape[1])
 
         # B1 — apply feature-variant filter to the training feature frame.
