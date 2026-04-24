@@ -944,6 +944,7 @@ class RecessionEnsembleModel:
         self.ensemble_method = "equal_weight_active"
         self.threshold_method = "calibrated training F1 with precision/recall tie-breaks"
         self.threshold_diagnostics = []
+        self.threshold_plateau_diagnostics = {}
         self.is_fitted = False
         self.recency_half_life_months = self.model_config.get('recency_half_life_months')
         self.recency_weight_floor = float(self.model_config.get('recency_weight_floor', 0.25))
@@ -1264,8 +1265,18 @@ class RecessionEnsembleModel:
                         self.severe_drift_psi,
                     )
 
+        # FIX 1 (AUDIT-1, M3): deterministic tie-break by alphabetical feature name.
+        # When two features have identical composite scores at the max_features=50
+        # cap boundary, the sort was non-deterministic under tiny float perturbations.
+        # Python's sort is stable, so sorting first by name (ascending) and then by
+        # score (descending, stable) guarantees alphabetical tie-break.
         ranked_candidates = [
-            feat for feat, _ in sorted(feature_scores.items(), key=lambda item: item[1], reverse=True)
+            feat
+            for feat, _ in sorted(
+                sorted(feature_scores.items(), key=lambda item: item[0]),
+                key=lambda item: item[1],
+                reverse=True,
+            )
         ]
 
         corr_matrix = None
@@ -2261,18 +2272,85 @@ class RecessionEnsembleModel:
         tradeoff rather than ROC-style specificity. We therefore optimize F1
         first, then break ties with precision, recall, specificity, and finally
         a slightly lower threshold to avoid suppressing useful early warnings.
+
+        FIX 2 (AUDIT-1): also compute threshold-plateau-width diagnostics and
+        stash them on the model so they can be emitted into run_manifest.json.
+        A flat F1 plateau (many thresholds within a small F1 tolerance of the
+        winner) means the argmax is unstable under tiny input perturbations —
+        this was the root cause of the 8-month GFC lead-time swing between
+        baselines efb307e and 0411da9. Log a WARNING when plateau_width_005 >= 5.
         """
         y_true = np.array(y_true)
         y_proba = np.array(y_proba)
 
         if len(set(y_true)) < 2:
             self.threshold_diagnostics = []
+            self.threshold_plateau_diagnostics = {}
             return 0.5
 
         threshold_rows = self._build_threshold_rows(y_true, y_proba)
         self.threshold_diagnostics = threshold_rows
         best_row = self._choose_threshold_row(threshold_rows)
+        self.threshold_plateau_diagnostics = self._compute_plateau_diagnostics(
+            threshold_rows, best_row
+        )
         return round(best_row['threshold'], 3)
+
+    @staticmethod
+    def _compute_plateau_diagnostics(threshold_rows, best_row):
+        """Compute F1-plateau-width diagnostics around the winning threshold.
+
+        Returns a dict with:
+          - threshold_plateau_width_01: count within 0.01 F1 of the winner
+          - threshold_plateau_width_005: count within 0.005 F1 of the winner
+          - threshold_plateau_range: [min_thr, max_thr] of the 0.01 plateau
+          - threshold_plateau_span_01: max-min of the 0.01 plateau (scalar)
+          - is_flat_plateau_warning: True iff width_005 >= 5
+
+        Logs a WARNING when the 0.005-F1 plateau has >=5 members — that's the
+        flatness level at which the tie-break is unstable enough to matter.
+        """
+        if not threshold_rows:
+            return {}
+
+        best_f1 = float(best_row.get('f1', 0.0))
+        winner_thr = float(best_row.get('threshold', 0.5))
+
+        tol_01 = [row for row in threshold_rows if row['f1'] >= best_f1 - 0.01]
+        tol_005 = [row for row in threshold_rows if row['f1'] >= best_f1 - 0.005]
+
+        plateau_01_thrs = [float(r['threshold']) for r in tol_01]
+        plateau_min = min(plateau_01_thrs) if plateau_01_thrs else winner_thr
+        plateau_max = max(plateau_01_thrs) if plateau_01_thrs else winner_thr
+
+        diagnostics = {
+            'winner_threshold': round(winner_thr, 4),
+            'winner_f1': round(best_f1, 6),
+            'threshold_plateau_width_01': int(len(tol_01)),
+            'threshold_plateau_width_005': int(len(tol_005)),
+            'threshold_plateau_range': [
+                round(plateau_min, 4),
+                round(plateau_max, 4),
+            ],
+            'threshold_plateau_span_01': round(plateau_max - plateau_min, 4),
+            'is_flat_plateau_warning': bool(len(tol_005) >= 5),
+        }
+
+        if diagnostics['is_flat_plateau_warning']:
+            logger.warning(
+                "Threshold plateau is FLAT: %d thresholds are within 0.005 F1 "
+                "of the winner (thr=%.3f, F1=%.4f) — range %.3f-%.3f. "
+                "Decision threshold is unstable to small input perturbations. "
+                "Report challengers at a fixed reference threshold (see "
+                "Lead_Months_Fixed in backtest_summary).",
+                diagnostics['threshold_plateau_width_005'],
+                winner_thr,
+                best_f1,
+                plateau_min,
+                plateau_max,
+            )
+
+        return diagnostics
 
     # ------------------------------------------------------------------
     # Prediction
