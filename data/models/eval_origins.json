@@ -110,6 +110,7 @@
     "Plan originally said 13 origins; actual count in backtester is 15 (7 positive + 8 expansion).",
     "ECE + calibration slope/intercept are unmeasured at freeze; they become new metrics after A1 ships.",
     "Oil Crisis (1972-11 training cutoff) currently fails with single-class error; keep in set as negative diagnostic.",
-    "2026-04-23: evaluation_scope policy added. Pre-1990 origins become informational; post-1990 drives gate decisions. Training window unchanged (full history)."
+    "2026-04-23: evaluation_scope policy added. Pre-1990 origins become informational; post-1990 drives gate decisions. Training window unchanged (full history).",
+    "2026-04-23 (A2 finding): simulated publication lags diverge from real ALFRED vintage by 6.65pp mean, 19.96pp max. Dot-com 2000-10 origin flips detection (simulated 46.4% crosses threshold; vintage 30.0% does not). All prior Dot-com analyses were measured under simulated lag — the real vintage picture is stricter. GFC/S&L/COVID are consistent across both pipelines. ALFRED vintage cache at `data/alfred_cache/` (189 parquets). Validation at `data/models/a2_validation.json`; summary at `data/models/a2_vintage_replay_summary.md`."
   ]
 }

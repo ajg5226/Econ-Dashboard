@@ -1,0 +1,103 @@
+{
+  "experiment_id": "A2",
+  "ran_at_utc": "2026-04-24T01:48:20+00:00",
+  "git_sha_current": "ed24542f03ffadd0ab7d8c5061d056eefe0b8397",
+  "origins_attempted": 21,
+  "origins_with_full_alfred_coverage": 7,
+  "origins_with_partial_coverage": 14,
+  "core_series_attempted": [
+    "coincident_PAYEMS",
+    "coincident_UNRATE",
+    "coincident_INDPRO",
+    "coincident_PI",
+    "coincident_RSXFS",
+    "coincident_CMRMTSPL",
+    "lagging_UEMPMEAN",
+    "leading_PERMIT",
+    "leading_HOUST"
+  ],
+  "core_series_with_alfred": [
+    "coincident_PAYEMS",
+    "coincident_UNRATE",
+    "coincident_INDPRO",
+    "coincident_PI",
+    "coincident_RSXFS",
+    "coincident_CMRMTSPL",
+    "lagging_UEMPMEAN",
+    "leading_PERMIT",
+    "leading_HOUST"
+  ],
+  "core_series_without_alfred": [],
+  "aggregate_stats": {
+    "origins": 21,
+    "mean_abs_gap_vintage_vs_simulated": 0.06649288811300808,
+    "mean_signed_gap_vintage_vs_simulated": -0.0022758334722179072,
+    "max_abs_gap_vintage_vs_simulated": 0.19960317460317462,
+    "max_abs_gap_origin": "2010-06",
+    "stddev_gap_vintage_vs_simulated": 0.0920752137714688,
+    "mean_abs_gap_vintage_vs_revised": 0.14205864673700713,
+    "mean_abs_gap_simulated_vs_revised": 0.14338237157752337
+  },
+  "per_recession_behavior": {
+    "1990-02": {
+      "label": "S&L (positive window)",
+      "prob_vintage": 0.476393296617163,
+      "prob_simulated": 0.4773076923076923,
+      "prob_revised": 0.36833333333333335,
+      "gap_vintage_vs_simulated": -0.0009143956905293127,
+      "signal_vintage": 1,
+      "signal_simulated": 1,
+      "detection_changes": false,
+      "alfred_ok_count": 6
+    },
+    "2000-10": {
+      "label": "Dot-com (positive window)",
+      "prob_vintage": 0.3,
+      "prob_simulated": 0.46393779309126487,
+      "prob_revised": 0.3672619047619048,
+      "gap_vintage_vs_simulated": -0.16393779309126488,
+      "signal_vintage": 0,
+      "signal_simulated": 1,
+      "detection_changes": true,
+      "alfred_ok_count": 7
+    },
+    "2007-07": {
+      "label": "GFC (positive window)",
+      "prob_vintage": 0.8347488732877079,
+      "prob_simulated": 0.8419982090231358,
+      "prob_revised": 0.7404999792547926,
+      "gap_vintage_vs_simulated": -0.007249335735427964,
+      "signal_vintage": 1,
+      "signal_simulated": 1,
+      "detection_changes": false,
+      "alfred_ok_count": 8
+    },
+    "2007-12": {
+      "label": "GFC peak month",
+      "prob_vintage": 0.8781512605042017,
+      "prob_simulated": 0.9913875144933688,
+      "prob_revised": 0.9738824334113079,
+      "gap_vintage_vs_simulated": -0.11323625398916715,
+      "signal_vintage": 1,
+      "signal_simulated": 1,
+      "detection_changes": false,
+      "alfred_ok_count": 8
+    },
+    "2019-09": {
+      "label": "COVID (positive window)",
+      "prob_vintage": 0.21481092436974789,
+      "prob_simulated": 0.24776104897963142,
+      "prob_revised": 0.0885185194015503,
+      "gap_vintage_vs_simulated": -0.03295012460988353,
+      "signal_vintage": 0,
+      "signal_simulated": 0,
+      "detection_changes": false,
+      "alfred_ok_count": 8
+    }
+  },
+  "production_recommendation": "switch_to_vintage_for_strict_search",
+  "verdict": "KEEP",
+  "verdict_reason": "Simulation is materially off: mean abs gap 6.6pp > 3pp; max abs gap 20.0pp > 10pp; 1 in-scope recession(s) show detection changes; production recommendation is switch_to_vintage",
+  "replay_runtime_seconds": 1313.92,
+  "cached_alfred_parquets": 189
+}
