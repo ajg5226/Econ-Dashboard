@@ -28,10 +28,18 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run update job
+      - name: Run update job (6M primary)
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: python -m scheduler.update_job
+
+      - name: Run update job (18M secondary horizon)
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+        run: python -m scheduler.update_job --horizon 18 --variant-output-dir data/models/horizon_18m/
+
+      - name: Append 18M secondary signal to executive report
+        run: python scripts/append_18m_secondary_signal.py
 
       - name: Commit and push data (if changed)
         run: |

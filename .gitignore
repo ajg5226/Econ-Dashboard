@@ -70,3 +70,16 @@ htmlcov/
 *.bak
 .firecrawl/
 
+
+# Claude Code / sub-agent artifacts (never ship)
+.claude/worktrees/
+.claude/scheduled_tasks.lock
+
+# Non-FRED data caches (created by unmerged B5 branch; main's non_fred_sources.py
+# isn't shipped yet so this cache is inert noise on main)
+data/non_fred_cache/
+
+# Variant-safety duplicates emitted by update_job (canonical files live at
+# data/reports/executive_report.txt and data/predictions.csv)
+data/models/executive_report.txt
+data/models/predictions.csv
