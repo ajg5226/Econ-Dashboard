@@ -1,28 +1,28 @@
 {
-  "timestamp": "2026-04-24T11:27:39.090080",
+  "timestamp": "2026-04-24T12:40:58.028180",
   "checks": {
     "prediction_stability": {
       "status": "OK",
       "details": {
-        "current_6m_vol": 0.0687,
-        "historical_mean_vol": 0.0465,
-        "historical_max_vol": 0.3279,
-        "last_mom_change": 0.0021
+        "current_6m_vol": 0.0717,
+        "historical_mean_vol": 0.05,
+        "historical_max_vol": 0.3394,
+        "last_mom_change": 0.0016
       }
     },
     "model_disagreement": {
       "status": "OK",
       "details": {
-        "current_spread": 0.252,
-        "current_std": 0.1182,
+        "current_spread": 0.2324,
+        "current_std": 0.1104,
         "model_predictions": {
-          "Probit": 0.252,
+          "Probit": 0.2324,
           "RandomForest": 0.0,
-          "XGBoost": 0.0533,
+          "XGBoost": 0.0588,
           "MarkovSwitching": 0.1961
         },
-        "mean_historical_spread": 0.1371,
-        "p95_historical_spread": 0.4174
+        "mean_historical_spread": 0.1405,
+        "p95_historical_spread": 0.4563
       }
     },
     "feature_drift": {
@@ -30,13 +30,13 @@
       "details": {
         "features_checked": 49,
         "features_drifted": 36,
-        "mean_psi": 4.8289,
+        "mean_psi": 4.803,
         "max_psi": 10.9225,
         "top_drifted": {
           "RESIDENTIAL_INV_Z": 10.922,
           "RESIDENTIAL_INV_YOY": 10.922,
           "GOODS_DECLINE_FLAG": 10.315,
-          "AT_RISK_DIFFUSION_WEIGHTED": 10.305,
+          "AT_RISK_DIFFUSION_WEIGHTED": 9.266,
           "leading_PRFI_MoM": 9.197
         }
       }
@@ -45,9 +45,9 @@
       "status": "WARNING",
       "details": {
         "window_months": 24,
-        "mean_predicted": 0.2424,
+        "mean_predicted": 0.2373,
         "observed_rate": 0.0,
-        "calibration_gap": 0.2424,
+        "calibration_gap": 0.2373,
         "observed_months": 18
       }
     },
@@ -74,7 +74,7 @@
     {
       "level": "INFO",
       "check": "calibration",
-      "message": "Calibration gap: predicted mean=24.2%, observed rate=0.0% over last 24 months"
+      "message": "Calibration gap: predicted mean=23.7%, observed rate=0.0% over last 24 months"
     }
   ],
   "alert_count": 2,
