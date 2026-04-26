@@ -1,19 +1,19 @@
 ================================================================================
 RECESSION PREDICTION ENGINE — EXECUTIVE REPORT
-Report Generated: 2026-04-24 12:36:02
+Report Generated: 2026-04-26 05:36:20
 ================================================================================
 
 RECESSION PROBABILITY — 6 MONTHS FORWARD
 As of: 2025-10-31
-Decision Threshold: 0.410 (optimized via calibrated training F1 with precision/recall tie-breaks)
+Decision Threshold: 0.390 (optimized via calibrated training F1 with precision/recall tie-breaks)
 --------------------------------------------------------------------------------
 
 MODEL PREDICTIONS:
-  PROBIT              :  45.6%  (weight: 0.500)
-  RANDOM_FOREST       :  20.1%  (weight: 0.500)
-  XGBOOST             :  24.7%  (diagnostic only)
+  PROBIT              :  45.8%  (weight: 0.500)
+  RANDOM_FOREST       :  19.7%  (weight: 0.500)
+  XGBOOST             :  23.6%  (diagnostic only)
   MARKOV_SWITCHING    :  44.1%  (diagnostic only)
-  ENSEMBLE            :  32.9%  (equal weight active)
+  ENSEMBLE            :  32.8%  (equal weight active)
 
 ================================================================================
 SIGNAL: ELEVATED RISK — Approaching recession threshold
@@ -41,4 +41,27 @@ METHODOLOGY:
   - Gilchrist & Zakrajsek (2012), Raftery et al. (2010) [DMA]
   - Ajello et al. (2022) [term premium], Grigoli & Sandri (2024) [house prices]
   - Scavette & O'Trakoun (2025) [SOS], Leamer (2024) [res. investment]
+================================================================================
+
+================================================================================
+SECONDARY SIGNAL — 18 MONTHS FORWARD (A3 horizon)
+================================================================================
+As of: 2026-04-30
+Ensemble probability (18M forward): 7.1%
+Decision threshold (18M):          21.0%
+Gap vs threshold:                  -13.9pp
+Signal:                            CALM (below 18M threshold)
+
+Active models: probit, random_forest, xgboost
+Weights:       probit=0.33, random_forest=0.33, xgboost=0.33
+Training CV:   AUC 0.625, PR-AUC 0.198
+
+The 18M horizon is a secondary signal added post-A3. It asks:
+"Is a recession likely to start within the next 18 months?"
+A3 established (historical holdout) that 18M forward-window
+predictions surface stronger peaks for Dot-com / S&L / GFC
+than 6M does — useful for early-stage monitoring. The 6M
+signal above remains the primary, more time-specific forecast.
+
+Model artifacts: data/models/horizon_18m/ (git SHA 0020df0e)
 ================================================================================

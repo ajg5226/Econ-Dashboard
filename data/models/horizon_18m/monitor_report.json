@@ -1,28 +1,28 @@
 {
-  "timestamp": "2026-04-24T09:54:59.362528",
+  "timestamp": "2026-04-26T05:51:58.803998",
   "checks": {
     "prediction_stability": {
       "status": "OK",
       "details": {
-        "current_6m_vol": 0.0,
-        "historical_mean_vol": 0.0628,
-        "historical_max_vol": 0.4115,
-        "last_mom_change": 0.0
+        "current_6m_vol": 0.0372,
+        "historical_mean_vol": 0.0555,
+        "historical_max_vol": 0.3849,
+        "last_mom_change": 0.0911
       }
     },
     "model_disagreement": {
       "status": "OK",
       "details": {
-        "current_spread": 0.0992,
-        "current_std": 0.0432,
+        "current_spread": 0.0902,
+        "current_std": 0.0385,
         "model_predictions": {
-          "Probit": 0.275,
-          "RandomForest": 0.1758,
-          "XGBoost": 0.2381,
+          "Probit": 0.1669,
+          "RandomForest": 0.2088,
+          "XGBoost": 0.2333,
           "MarkovSwitching": 0.2571
         },
-        "mean_historical_spread": 0.121,
-        "p95_historical_spread": 0.2876
+        "mean_historical_spread": 0.1125,
+        "p95_historical_spread": 0.3114
       }
     },
     "feature_drift": {
@@ -30,13 +30,13 @@
       "details": {
         "features_checked": 49,
         "features_drifted": 33,
-        "mean_psi": 4.6217,
-        "max_psi": 10.9225,
+        "mean_psi": 4.5918,
+        "max_psi": 10.7552,
         "top_drifted": {
-          "RESIDENTIAL_INV_Z": 10.922,
-          "RESIDENTIAL_INV_YOY": 10.922,
-          "RES_VS_NONRES_SPREAD": 9.437,
+          "RESIDENTIAL_INV_Z": 10.755,
+          "RESIDENTIAL_INV_YOY": 10.755,
           "coincident_PAYEMS": 9.423,
+          "RES_VS_NONRES_SPREAD": 9.315,
           "AT_RISK_DIFFUSION_WEIGHTED": 9.266
         }
       }
@@ -45,9 +45,9 @@
       "status": "WARNING",
       "details": {
         "window_months": 24,
-        "mean_predicted": 0.3103,
+        "mean_predicted": 0.346,
         "observed_rate": 0.0,
-        "calibration_gap": 0.3103,
+        "calibration_gap": 0.346,
         "observed_months": 6
       }
     },
@@ -55,13 +55,13 @@
       "status": "WARNING",
       "details": {
         "window_months": 60,
-        "ece": 0.4676,
-        "calibration_slope": -0.0529,
-        "calibration_intercept": -2.4247,
-        "brier_reliability": 0.37477,
-        "brier_resolution": 0.02338,
+        "ece": 0.4756,
+        "calibration_slope": -0.1609,
+        "calibration_intercept": -2.5558,
+        "brier_reliability": 0.39233,
+        "brier_resolution": 0.01944,
         "brier_uncertainty": 0.07639,
-        "brier_total": 0.42778,
+        "brier_total": 0.44927,
         "ece_threshold": 0.1
       }
     },
@@ -69,7 +69,7 @@
       "status": "OK",
       "details": {
         "latest_date": "2026-04-30",
-        "days_old": -6
+        "days_old": -4
       }
     }
   },
@@ -77,22 +77,22 @@
     {
       "level": "WARNING",
       "check": "feature_drift",
-      "message": "33 features show significant drift (PSI>0.2). Top: RESIDENTIAL_INV_Z=10.92, RESIDENTIAL_INV_YOY=10.92, RES_VS_NONRES_SPREAD=9.44"
+      "message": "33 features show significant drift (PSI>0.2). Top: RESIDENTIAL_INV_Z=10.76, RESIDENTIAL_INV_YOY=10.76, coincident_PAYEMS=9.42"
     },
     {
       "level": "INFO",
       "check": "calibration",
-      "message": "Calibration gap: predicted mean=31.0%, observed rate=0.0% over last 24 months"
+      "message": "Calibration gap: predicted mean=34.6%, observed rate=0.0% over last 24 months"
     },
     {
       "level": "WARNING",
       "check": "calibration_quality",
-      "message": "ECE=0.468 over last 60 months exceeds threshold 0.10"
+      "message": "ECE=0.476 over last 60 months exceeds threshold 0.10"
     },
     {
       "level": "INFO",
       "check": "calibration_quality",
-      "message": "Calibration slope=-0.05 indicates overconfident probabilities"
+      "message": "Calibration slope=-0.16 indicates overconfident probabilities"
     }
   ],
   "alert_count": 4,
