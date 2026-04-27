@@ -204,15 +204,23 @@ class ModelMonitor:
     def _check_feature_drift(self, indicators_df: pd.DataFrame,
                               feature_cols: list,
                               lookback_months: int = 36,
-                              psi_threshold: float = 0.20) -> dict:
+                              psi_info: float = 0.25,
+                              psi_warning: float = 5.0,
+                              psi_critical: float = 10.0) -> dict:
         """
         Check for feature distribution drift using Population Stability Index (PSI).
 
-        PSI < 0.10: No significant shift
-        PSI 0.10-0.25: Moderate shift (investigate)
-        PSI > 0.25: Significant shift (retrain recommended)
+        Tiered cutoffs:
+            PSI < psi_info       : stable
+            psi_info  ≤ PSI < psi_warning  : INFO     — moderate drift (panoramic)
+            psi_warning ≤ PSI < psi_critical : WARNING  — extreme drift
+            PSI ≥ psi_critical   : CRITICAL — regime-change candidate
 
-        We compare the most recent 12 months against the prior 24 months.
+        Industry-standard PSI bands (0.10 / 0.25) saturate during macro regime
+        shifts because per-feature drift is correlated — every feature pings at
+        once. The widened cutoffs separate panoramic background drift from
+        genuine extremes. Compares the most recent 12 months against the prior
+        ``lookback_months - 12`` months.
         """
         result = {'status': 'OK', 'details': {}}
 
@@ -228,39 +236,92 @@ class ModelMonitor:
         reference = indicators_df[available_features].iloc[-lookback_months:-12]
 
         psi_scores = {}
-        drifted_features = []
+        info_drift = []
+        warning_drift = []
+        critical_drift = []
+        skipped_binary = []
+        psi_failures = []
 
         for col in available_features:
-            ref_vals = reference[col].dropna().values
-            rec_vals = recent[col].dropna().values
+            try:
+                ref_vals = reference[col].dropna().values
+                rec_vals = recent[col].dropna().values
 
-            if len(ref_vals) < 10 or len(rec_vals) < 5:
-                continue
+                if len(ref_vals) < 10 or len(rec_vals) < 5:
+                    continue
 
-            psi = self._compute_psi(ref_vals, rec_vals)
-            psi_scores[col] = round(psi, 4)
+                # Quantile-binned PSI is ill-defined for near-binary features:
+                # most percentile breakpoints collapse to the same value, leaving
+                # a single bin that produces large spurious PSI on any 0->1 flip.
+                # Use a difference-in-rates check instead for these.
+                if len(np.unique(ref_vals)) <= 2:
+                    skipped_binary.append(col)
+                    continue
 
-            if psi > psi_threshold:
-                drifted_features.append((col, psi))
+                psi = self._compute_psi(ref_vals, rec_vals)
+                psi_scores[col] = round(psi, 4)
+
+                if psi >= psi_critical:
+                    critical_drift.append((col, psi))
+                elif psi >= psi_warning:
+                    warning_drift.append((col, psi))
+                elif psi >= psi_info:
+                    info_drift.append((col, psi))
+            except Exception as exc:
+                psi_failures.append(col)
+                logger.warning("PSI computation failed for feature %s: %s", col, exc)
+
+        drifted_features = critical_drift + warning_drift + info_drift
+        drifted_features.sort(key=lambda x: x[1], reverse=True)
 
         result['details'] = {
             'features_checked': len(psi_scores),
             'features_drifted': len(drifted_features),
+            'features_info': len(info_drift),
+            'features_warning': len(warning_drift),
+            'features_critical': len(critical_drift),
+            'features_skipped_binary': len(skipped_binary),
+            'features_failed': len(psi_failures),
             'mean_psi': round(np.mean(list(psi_scores.values())), 4) if psi_scores else 0,
             'max_psi': round(max(psi_scores.values()), 4) if psi_scores else 0,
+            'thresholds': {
+                'info': psi_info,
+                'warning': psi_warning,
+                'critical': psi_critical,
+            },
         }
 
         if drifted_features:
-            # Sort by PSI descending, show top 5
-            drifted_features.sort(key=lambda x: x[1], reverse=True)
             top_drifted = drifted_features[:5]
             result['details']['top_drifted'] = {f: round(p, 3) for f, p in top_drifted}
+            if critical_drift:
+                result['details']['top_critical'] = {
+                    f: round(p, 3) for f, p in critical_drift[:5]
+                }
+
+            # Alert level reflects the highest tier present; named features
+            # come from that same tier so the alert headline matches its level.
+            if critical_drift:
+                level = 'CRITICAL'
+                named = critical_drift[:3]
+            elif warning_drift:
+                level = 'WARNING'
+                named = warning_drift[:3]
+            else:
+                level = 'INFO'
+                named = info_drift[:3]
+
             result['status'] = 'WARNING'
             self.alerts.append({
-                'level': 'WARNING',
+                'level': level,
                 'check': 'feature_drift',
-                'message': (f'{len(drifted_features)} features show significant drift (PSI>{psi_threshold}). '
-                            f'Top: {", ".join(f"{f}={p:.2f}" for f, p in top_drifted[:3])}')
+                'message': (
+                    f'{len(drifted_features)} features drifted '
+                    f'({len(critical_drift)} CRITICAL ≥{psi_critical}, '
+                    f'{len(warning_drift)} WARNING ≥{psi_warning}, '
+                    f'{len(info_drift)} INFO ≥{psi_info}). '
+                    f'Top: {", ".join(f"{f}={p:.2f}" for f, p in named)}'
+                ),
             })
 
         return result

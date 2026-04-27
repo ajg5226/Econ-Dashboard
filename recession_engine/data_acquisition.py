@@ -49,7 +49,9 @@ class RecessionDataAcquisition:
         """
         return {
             'leading': {
-                'USSLIND': 'CB Leading Index',
+                # USSLIND ('CB Leading Index') discontinued at FRED 2020-04;
+                # last observation 2020-02. Removed from fetch list — the
+                # dead-series detector below would drop it anyway.
                 'T10Y2Y': 'Treasury 10Y-2Y Spread',
                 'T10Y3M': 'Treasury 10Y-3M Spread',
                 'GS2': '2-Year Treasury Constant Maturity Rate',
@@ -220,13 +222,21 @@ class RecessionDataAcquisition:
             'financial_DRTSCILM', 'financial_DRTSCIS',
             'financial_DRTSCLCC', 'financial_DRSDCILM',
         ]
+        # limit_area='inside' prevents pandas from forward-extending the last
+        # known value indefinitely past the latest published quarter (which
+        # silently fabricates a flat tail and trips drift detectors). ffill
+        # with limit=2 then permits a 2-month carry to cover the typical
+        # FRED quarterly release lag; anything beyond stays NaN.
         for col in quarterly_series:
             if col in df.columns:
                 non_null = df[col].notna().sum()
                 if non_null > 0 and non_null < len(df) * 0.5:
-                    df[col] = df[col].interpolate(method='linear')
+                    df[col] = df[col].interpolate(method='linear', limit_area='inside')
+                    df[col] = df[col].ffill(limit=2)
                     logger.info(f"  Interpolated {col} from quarterly to monthly "
                                 f"({non_null} → {df[col].notna().sum()} obs)")
+
+        df = self._drop_dead_series(df)
 
         # Basic data quality summary
         missing_frac = df.isna().mean().sort_values(ascending=False)
@@ -234,6 +244,41 @@ class RecessionDataAcquisition:
         for name, frac in missing_frac.head(10).items():
             logger.info(f"  {name:30s}: {frac:6.1%} missing")
 
+        return df
+
+    @staticmethod
+    def _drop_dead_series(df: pd.DataFrame, threshold_months: int = 12) -> pd.DataFrame:
+        """Drop columns whose latest observation is more than ``threshold_months``
+        stale relative to the panel's max date. Skips ``ref_*`` columns (reference
+        benchmarks that may publish on different cadences). Catches discontinued
+        FRED series before they propagate as forward-filled phantom values.
+        """
+        if df.empty:
+            return df
+        panel_max = df.index.max()
+        if pd.isna(panel_max):
+            return df
+        dead_cols = []
+        for col in df.columns:
+            if col.startswith('ref_'):
+                continue
+            last_valid = df[col].last_valid_index()
+            if last_valid is None:
+                dead_cols.append((col, None, None))
+                continue
+            gap = (panel_max.year - last_valid.year) * 12 + (panel_max.month - last_valid.month)
+            if gap > threshold_months:
+                dead_cols.append((col, last_valid, gap))
+        for col, last_valid, gap in dead_cols:
+            if last_valid is None:
+                logger.error("Dropping series with no observations: %s", col)
+            else:
+                logger.error(
+                    "Dropping stale series %s: last value %s (%d months stale, threshold %d)",
+                    col, last_valid.strftime('%Y-%m'), gap, threshold_months,
+                )
+        if dead_cols:
+            df = df.drop(columns=[c for c, _, _ in dead_cols])
         return df
 
     # ------------------------------------------------------------------
@@ -260,17 +305,20 @@ class RecessionDataAcquisition:
         # ── Tier 1: Standard transforms ──────────────────────────────
         for col in indicator_cols:
             # Percentage changes at multiple horizons
-            df_eng[f'{col}_MoM'] = df[col].pct_change(1)
-            df_eng[f'{col}_3M'] = df[col].pct_change(3)
-            df_eng[f'{col}_6M'] = df[col].pct_change(6)
-            df_eng[f'{col}_YoY'] = df[col].pct_change(12)
+            df_eng[f'{col}_MoM'] = df[col].pct_change(1, fill_method=None)
+            df_eng[f'{col}_3M'] = df[col].pct_change(3, fill_method=None)
+            df_eng[f'{col}_6M'] = df[col].pct_change(6, fill_method=None)
+            df_eng[f'{col}_YoY'] = df[col].pct_change(12, fill_method=None)
 
             # Moving averages (smoothing)
-            df_eng[f'{col}_MA3'] = df[col].rolling(3).mean()
-            df_eng[f'{col}_MA6'] = df[col].rolling(6).mean()
+            # min_periods at 50% of window — single mid-stream NaN gaps in
+            # raw series (e.g., a missed BLS release) would otherwise propagate
+            # the full window length through the rolling computation.
+            df_eng[f'{col}_MA3'] = df[col].rolling(3, min_periods=2).mean()
+            df_eng[f'{col}_MA6'] = df[col].rolling(6, min_periods=3).mean()
 
             # Volatility
-            df_eng[f'{col}_Vol6M'] = df[col].rolling(6).std()
+            df_eng[f'{col}_Vol6M'] = df[col].rolling(6, min_periods=3).std()
 
         # ── Tier 2: Term spread dynamics (Engstrom-Sharpe 2019) ──────
         # Note: NEAR_TERM_FORWARD_SPREAD dynamics are computed separately in Tier 2b
@@ -343,7 +391,7 @@ class RecessionDataAcquisition:
         if unrate_col in df.columns:
             unrate = df[unrate_col]
             # 3-month moving average of unemployment rate
-            unrate_ma3 = unrate.rolling(3).mean()
+            unrate_ma3 = unrate.rolling(3, min_periods=2).mean()
             # Trailing 12-month low of the 3-month MA
             unrate_ma3_min12 = unrate_ma3.rolling(12, min_periods=6).min()
             # Sahm indicator: rise above the trailing low
@@ -428,11 +476,11 @@ class RecessionDataAcquisition:
         if hp_col in df.columns:
             hp = df[hp_col]
             # YoY house price growth
-            df_eng['HOUSE_PRICE_YOY'] = hp.pct_change(12)
+            df_eng['HOUSE_PRICE_YOY'] = hp.pct_change(12, fill_method=None)
             # 3-month momentum
-            df_eng['HOUSE_PRICE_MOM3'] = hp.pct_change(3)
+            df_eng['HOUSE_PRICE_MOM3'] = hp.pct_change(3, fill_method=None)
             # Declining flag (negative YoY)
-            df_eng['HOUSE_PRICE_DECLINING'] = (hp.pct_change(12) < 0).astype(float)
+            df_eng['HOUSE_PRICE_DECLINING'] = (hp.pct_change(12, fill_method=None) < 0).astype(float)
             # Grigoli-Sandri triple condition: curve inverted + house prices falling + EBP elevated
             if spread_col_t10 in df.columns:
                 curve_inv = (df[spread_col_t10] < 0).astype(float)
@@ -473,12 +521,12 @@ class RecessionDataAcquisition:
         pcdg_col = 'leading_PCDG'
         if prfi_col in df.columns:
             prfi = df[prfi_col]
-            df_eng['RESIDENTIAL_INV_YOY'] = prfi.pct_change(12)
-            df_eng['RESIDENTIAL_INV_MOM3'] = prfi.pct_change(3)
+            df_eng['RESIDENTIAL_INV_YOY'] = prfi.pct_change(12, fill_method=None)
+            df_eng['RESIDENTIAL_INV_MOM3'] = prfi.pct_change(3, fill_method=None)
             # At-risk: residential investment declining YoY
-            df_eng['RESIDENTIAL_INV_DECLINING'] = (prfi.pct_change(12) < 0).astype(float)
+            df_eng['RESIDENTIAL_INV_DECLINING'] = (prfi.pct_change(12, fill_method=None) < 0).astype(float)
             # Expanding z-score of YoY growth
-            ri_yoy = prfi.pct_change(12)
+            ri_yoy = prfi.pct_change(12, fill_method=None)
             ri_mean = ri_yoy.expanding(min_periods=24).mean()
             ri_std = ri_yoy.expanding(min_periods=24).std().where(
                 lambda x: x > 1e-8, np.nan
@@ -489,12 +537,12 @@ class RecessionDataAcquisition:
 
         if pcdg_col in df.columns:
             pcdg = df[pcdg_col]
-            df_eng['DURABLES_YOY'] = pcdg.pct_change(12)
-            df_eng['DURABLES_MOM3'] = pcdg.pct_change(3)
+            df_eng['DURABLES_YOY'] = pcdg.pct_change(12, fill_method=None)
+            df_eng['DURABLES_MOM3'] = pcdg.pct_change(3, fill_method=None)
             # At-risk: durables declining YoY
-            df_eng['DURABLES_DECLINING'] = (pcdg.pct_change(12) < 0).astype(float)
+            df_eng['DURABLES_DECLINING'] = (pcdg.pct_change(12, fill_method=None) < 0).astype(float)
             # Expanding z-score
-            dur_yoy = pcdg.pct_change(12)
+            dur_yoy = pcdg.pct_change(12, fill_method=None)
             dur_mean = dur_yoy.expanding(min_periods=24).mean()
             dur_std = dur_yoy.expanding(min_periods=24).std().where(
                 lambda x: x > 1e-8, np.nan
@@ -509,8 +557,8 @@ class RecessionDataAcquisition:
         pnfi_col = 'leading_PNFI'
         payems_col = 'coincident_PAYEMS'
         if pnfi_col in df.columns and payems_col in df.columns:
-            pnfi_yoy = df[pnfi_col].pct_change(12)
-            payems_yoy = df[payems_col].pct_change(12)
+            pnfi_yoy = df[pnfi_col].pct_change(12, fill_method=None)
+            payems_yoy = df[payems_col].pct_change(12, fill_method=None)
             # Sectoral divergence: capex growth minus employment growth
             df_eng['SECTORAL_DIVERGENCE'] = pnfi_yoy - payems_yoy
             # Expanding z-score of the divergence
@@ -527,7 +575,7 @@ class RecessionDataAcquisition:
 
             # Also compute Leamer's residential vs nonresidential ratio
             if prfi_col in df.columns:
-                prfi_yoy = df[prfi_col].pct_change(12)
+                prfi_yoy = df[prfi_col].pct_change(12, fill_method=None)
                 # When residential is falling but nonresidential is rising,
                 # rate-sensitive sectors are weakening first
                 df_eng['RES_VS_NONRES_SPREAD'] = prfi_yoy - pnfi_yoy
@@ -561,7 +609,7 @@ class RecessionDataAcquisition:
             # Ratio gives labor-market tightness (higher = tighter).
             vu_ratio = openings / unemployed.replace(0, np.nan)
             df_eng['VU_RATIO'] = vu_ratio
-            df_eng['VU_RATIO_YoY'] = vu_ratio.pct_change(12)
+            df_eng['VU_RATIO_YoY'] = vu_ratio.pct_change(12, fill_method=None)
 
             vu_mean = vu_ratio.expanding(min_periods=24).mean()
             vu_std = vu_ratio.expanding(min_periods=24).std().where(
@@ -569,7 +617,7 @@ class RecessionDataAcquisition:
             )
             df_eng['VU_RATIO_Z'] = (vu_ratio - vu_mean) / vu_std
             # At-risk: V/U ratio deteriorating >15% YoY
-            df_eng['VU_DETERIORATION'] = (vu_ratio.pct_change(12) < -0.15).astype(float)
+            df_eng['VU_DETERIORATION'] = (vu_ratio.pct_change(12, fill_method=None) < -0.15).astype(float)
 
             logger.info("  ✓ V/U gap features (JOLTS + UNEMPLOY)")
 
@@ -581,7 +629,7 @@ class RecessionDataAcquisition:
                 lambda x: x > 1e-8, np.nan
             )
             df_eng['QUITS_Z'] = (quits - quits_mean) / quits_std
-            df_eng['QUITS_DECLINE_YOY'] = quits.pct_change(12)
+            df_eng['QUITS_DECLINE_YOY'] = quits.pct_change(12, fill_method=None)
             df_eng['QUITS_AT_RISK'] = (df_eng['QUITS_Z'] < -1.0).astype(float)
 
             logger.info("  ✓ Quits rate features (JOLTS)")
@@ -618,14 +666,14 @@ class RecessionDataAcquisition:
             payems = df[payems_col]
             goods_share = goods / payems.replace(0, np.nan)
             df_eng['GOODS_SHARE'] = goods_share
-            df_eng['GOODS_SHARE_YoY'] = goods_share.pct_change(12)
+            df_eng['GOODS_SHARE_YoY'] = goods_share.pct_change(12, fill_method=None)
 
-            goods_yoy = goods.pct_change(12)
+            goods_yoy = goods.pct_change(12, fill_method=None)
             df_eng['GOODS_DECLINE_FLAG'] = (goods_yoy < 0).astype(float)
 
             if usserv_col in df.columns:
                 serv = df[usserv_col]
-                serv_yoy = serv.pct_change(12)
+                serv_yoy = serv.pct_change(12, fill_method=None)
                 df_eng['GOODS_YoY_MINUS_SERV_YoY'] = goods_yoy - serv_yoy
 
             logger.info("  ✓ Cyclical vs acyclical employment mix (goods/services)")
@@ -714,7 +762,7 @@ class RecessionDataAcquisition:
         # (d) Non-financial credit-growth deceleration (TOTALSL)
         credit_growth_col = 'financial_TOTALSL'
         if credit_growth_col in df.columns:
-            credit_yoy = df[credit_growth_col].pct_change(12)
+            credit_yoy = df[credit_growth_col].pct_change(12, fill_method=None)
             df_eng['CREDIT_GROWTH_YOY'] = credit_yoy
             # Deceleration: YoY minus its 12-month-lagged value
             df_eng['CREDIT_GROWTH_DECEL'] = (

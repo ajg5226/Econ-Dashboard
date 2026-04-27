@@ -70,9 +70,38 @@ class TestDataAcquisition(unittest.TestCase):
         }, index=dates)
         
         df_target = self.acq.create_forecast_target(df, horizon_months=6)
-        
+
         # Check that target column was created
         self.assertIn('RECESSION_FORWARD_6M', df_target.columns)
+
+    def test_drop_dead_series_filters_stale_columns(self):
+        """Dead-series detector drops columns more than threshold months
+        stale, keeps fresh columns, and exempts ref_* benchmarks."""
+        dates = pd.date_range('2020-01-31', '2026-04-30', freq='ME')
+        n = len(dates)
+        df = pd.DataFrame({
+            # Fresh series — values through the end of the panel.
+            'fresh_monthly': pd.Series(range(n), index=dates, dtype=float),
+            # Discontinued series — last value 2020-05, 70+ months stale.
+            'stale_dead': pd.Series([1.0] * 5 + [np.nan] * (n - 5), index=dates),
+            # Reference benchmark with the same staleness — must be exempted.
+            'ref_benchmark_old': pd.Series([1.0] * 5 + [np.nan] * (n - 5), index=dates),
+            # Column with no observations at all.
+            'never_published': pd.Series([np.nan] * n, index=dates),
+        })
+
+        result = self.acq._drop_dead_series(df, threshold_months=12)
+
+        self.assertIn('fresh_monthly', result.columns)
+        self.assertNotIn('stale_dead', result.columns)
+        self.assertIn('ref_benchmark_old', result.columns)
+        self.assertNotIn('never_published', result.columns)
+
+    def test_drop_dead_series_handles_empty_frame(self):
+        """Detector returns empty frame unchanged without raising."""
+        empty = pd.DataFrame()
+        result = self.acq._drop_dead_series(empty)
+        self.assertTrue(result.empty)
 
 
 if __name__ == '__main__':

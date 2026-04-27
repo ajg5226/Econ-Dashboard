@@ -475,6 +475,34 @@ def _train_model_bundle(*, df_final: pd.DataFrame, df_features: pd.DataFrame,
         c for c in df_model.columns
         if c not in [target_col, 'RECESSION'] and not c.startswith('ref_')
     ]
+
+    # Log features whose ffill below would carry forward >3 months of
+    # staleness. Quarterly publication chains naturally produce ~4-month
+    # tails, so INFO is the steady-state level; escalate to WARNING above
+    # 6 months, where staleness signals either a single-cell raw-data gap
+    # propagating through a rolling window or a series approaching the
+    # dead-series threshold.
+    panel_max = df_model.index.max()
+    stale = []
+    for col in feature_cols_for_ffill:
+        if not pd.isna(df_model[col].iloc[-1]):
+            continue
+        last_valid = df_model[col].last_valid_index()
+        if last_valid is None:
+            stale.append((col, None, 999))
+            continue
+        gap = (panel_max.year - last_valid.year) * 12 + (panel_max.month - last_valid.month)
+        if gap > 3:
+            stale.append((col, last_valid, gap))
+    if stale:
+        stale.sort(key=lambda x: x[2], reverse=True)
+        sample = ', '.join(f'{c}={g}mo' for c, _, g in stale[:10])
+        log_method = logger.warning if stale[0][2] > 6 else logger.info
+        log_method(
+            "%s ffill staleness: %d feature(s) >3mo stale at nowcast (worst: %s)",
+            label, len(stale), sample,
+        )
+
     df_model[feature_cols_for_ffill] = df_model[feature_cols_for_ffill].ffill()
 
     nowcast_mask = df_model[target_col].isna()
@@ -874,6 +902,21 @@ def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
         df_features = acq.engineer_features(df_raw_lagged)
         logger.info("✓ Engineered %d total columns", df_features.shape[1])
 
+        if len(df_features) > 0 and df_features.shape[1] > 0:
+            tail_row = df_features.iloc[-1]
+            tail_nan = int(tail_row.isna().sum())
+            if tail_nan > 0:
+                tail_nan_sample = tail_row[tail_row.isna()].index[:10].tolist()
+                logger.info(
+                    "  Latest-row NaN: %d/%d features (sample: %s)",
+                    tail_nan, df_features.shape[1], tail_nan_sample,
+                )
+        else:
+            logger.warning(
+                "  Engineered frame is empty (%d rows × %d cols) — downstream steps will fail",
+                len(df_features), df_features.shape[1],
+            )
+
         # B1 — apply feature-variant filter to the training feature frame.
         # The filter is a no-op for 'hybrid' (the production default).
         variant_name = feature_variant or "hybrid"
@@ -913,7 +956,7 @@ def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
                 glr_result['components'].shape[1],
             )
         except Exception as e:
-            logger.warning("GLR engine failed, skipping composites: %s", e)
+            logger.warning("GLR engine failed, skipping composites: %s", e, exc_info=True)
             df_indicators = df_features
 
         # Save indicators WITH engineered features + GLR composites — but only

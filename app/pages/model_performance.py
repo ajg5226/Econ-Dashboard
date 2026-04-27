@@ -640,7 +640,15 @@ if 'Actual_Recession' in predictions_df.columns:
             mean_psi = details.get('mean_psi', 0)
             if checked > 0:
                 st.metric("Features Checked", checked)
-                st.metric("Drifted (PSI > 0.20)", drifted)
+                if 'features_critical' in details:
+                    n_c = details.get('features_critical', 0)
+                    n_w = details.get('features_warning', 0)
+                    n_i = details.get('features_info', 0)
+                    st.metric("Drifted", drifted)
+                    st.caption(f"{n_c} CRITICAL · {n_w} WARNING · {n_i} INFO")
+                else:
+                    # Legacy single-threshold reports
+                    st.metric("Drifted (PSI > 0.20)", drifted)
                 st.caption(f"Mean PSI: {mean_psi:.4f}")
             top_drifted = details.get('top_drifted', {})
             if top_drifted:
@@ -652,7 +660,7 @@ if 'Actual_Recession' in predictions_df.columns:
             with st.expander(f"⚠️ {len(alerts)} Alert(s)", expanded=True):
                 for alert in alerts:
                     level = alert.get('level', 'INFO')
-                    icon = '🔴' if level == 'WARNING' else 'ℹ️'
+                    icon = {'CRITICAL': '🚨', 'WARNING': '🔴'}.get(level, 'ℹ️')
                     st.markdown(f"{icon} **[{alert.get('check', '')}]** {alert.get('message', '')}")
 
     # ── Historical Backtest Results ───────────────────────────────────────────

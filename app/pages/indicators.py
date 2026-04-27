@@ -77,11 +77,6 @@ indicators_df = normalize_indicator_index(indicators_df)
 # Indicator descriptions — includes new monetary/financial indicators
 INDICATOR_DESCRIPTIONS = {
     # Leading indicators
-    'leading_USSLIND': {
-        'name': 'Conference Board Leading Index',
-        'description': 'Composite index of 10 leading indicators that predict economic activity 6-12 months ahead.',
-        'category': 'Leading'
-    },
     'leading_T10Y2Y': {
         'name': '10Y-2Y Treasury Spread',
         'description': 'Yield curve spread. Inversion (negative values) historically precedes recessions by 6-18 months. (Estrella & Mishkin 1998)',
@@ -178,11 +173,6 @@ INDICATOR_DESCRIPTIONS = {
     'monetary_BAA10Y': {
         'name': 'Baa Corporate - 10Y Treasury Spread',
         'description': 'Credit spread proxy for the Excess Bond Premium (Gilchrist & Zakrajsek 2012). A 50bps rise increases 12-month recession probability by ~15pp.',
-        'category': 'Monetary'
-    },
-    'monetary_TEDRATE': {
-        'name': 'TED Spread (3M LIBOR - 3M T-Bill)',
-        'description': 'Interbank credit stress indicator. Spikes during financial crises signal banking system strain.',
         'category': 'Monetary'
     },
     # Financial conditions indices (Chicago Fed)

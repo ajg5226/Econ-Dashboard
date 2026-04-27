@@ -202,7 +202,7 @@ class GLRRegimeEngine:
         if transform == 'zscore':
             raw = sources[0]
         elif transform == 'yoy':
-            raw = sources[0].pct_change(12)
+            raw = sources[0].pct_change(12, fill_method=None)
         elif transform == 'mom3':
             raw = sources[0].diff(3)
         elif transform == 'mom1':
