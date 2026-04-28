@@ -1907,6 +1907,13 @@ class RecessionEnsembleModel:
 
         This prevents a structurally weak model from diluting stronger supervised
         signals while still keeping a genuine ensemble of at least two models.
+
+        PR-AUC tolerance is 80% of the best CV PR-AUC (was 90%). Loosened
+        after the Chauvet-Piger benchmark joined the ensemble: CP routinely
+        scores PR-AUC ~0.91, which under a 0.90 multiplier set the bar at
+        ~0.82 and made random_forest's membership stochastic across CV
+        re-runs (sometimes 0.78, sometimes 0.83). 0.80 keeps the quality
+        bar tight while making the active set robust to that variance.
         """
         if not cv_scores:
             return []
@@ -1918,7 +1925,7 @@ class RecessionEnsembleModel:
         active = [
             name for name, score in cv_scores.items()
             if score.get('auc', 0.5) >= best_auc - 0.10
-            and score.get('pr_auc', 0.0) >= best_pr_auc * 0.90
+            and score.get('pr_auc', 0.0) >= best_pr_auc * 0.80
             and score.get('brier', 0.25) <= best_brier * 2.00
         ]
 
