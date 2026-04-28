@@ -6,7 +6,7 @@
   "block_size_months": 12,
   "empirical_coverage_on_backtest": null,
   "latest_ci_lower": 0.0,
-  "latest_ci_upper": 0.33162126313810136,
-  "latest_model_spread": 0.40304026271861954,
-  "timestamp": "2026-04-28T15:19:37.648773"
+  "latest_ci_upper": 0.35366058032323094,
+  "latest_model_spread": 0.40518276814822846,
+  "timestamp": "2026-04-28T15:33:45.851836"
 }
