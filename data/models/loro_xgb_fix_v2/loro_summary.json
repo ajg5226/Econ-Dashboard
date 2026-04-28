@@ -1,0 +1,91 @@
+{
+  "generated_at_utc": "2026-04-28T18:47:37.018499+00:00",
+  "git_sha_short": "976829a",
+  "horizon_months": 6,
+  "max_features": 50,
+  "n_cv_splits": 5,
+  "skip_markov": false,
+  "start_date": null,
+  "panel_rows": 676,
+  "panel_first_date": "1970-01-31",
+  "panel_last_date": "2026-04-30",
+  "summaries": {
+    "in_scope": {
+      "n": 4,
+      "mean_auc": 0.8305378831694621,
+      "mean_brier": 0.19046888957443792,
+      "mean_peak_prob": 0.6249406620481813,
+      "mean_lead_months_own": 2.6390713972842748,
+      "mean_lead_months_fixed": 2.6390713972842748,
+      "n_crossed_threshold_fixed": 3,
+      "recessions": [
+        "S&L Crisis (1990-91)",
+        "Dot-com (2001)",
+        "GFC (2007-09)",
+        "COVID (2020)"
+      ]
+    },
+    "informational": {
+      "n": 2,
+      "mean_auc": 0.8787985588972431,
+      "mean_brier": 0.2721889276601396,
+      "mean_peak_prob": 0.4323098301319849,
+      "mean_lead_months_own": 0.4599211563731931,
+      "mean_lead_months_fixed": -6.044678055190539,
+      "n_crossed_threshold_fixed": 1,
+      "recessions": [
+        "Volcker I (1980)",
+        "Volcker II (1981-82)"
+      ]
+    }
+  },
+  "n_recessions_evaluated": 7,
+  "ensemble_weights_per_fold": [
+    {
+      "recession": "Oil Crisis (1973-75)",
+      "weights": NaN
+    },
+    {
+      "recession": "Volcker I (1980)",
+      "weights": {
+        "probit": 0.5,
+        "xgboost": 0.5
+      }
+    },
+    {
+      "recession": "Volcker II (1981-82)",
+      "weights": {
+        "probit": 0.5,
+        "random_forest": 0.5
+      }
+    },
+    {
+      "recession": "S&L Crisis (1990-91)",
+      "weights": {
+        "probit": 0.5,
+        "random_forest": 0.5
+      }
+    },
+    {
+      "recession": "Dot-com (2001)",
+      "weights": {
+        "probit": 0.5,
+        "random_forest": 0.5
+      }
+    },
+    {
+      "recession": "GFC (2007-09)",
+      "weights": {
+        "probit": 0.5,
+        "random_forest": 0.5
+      }
+    },
+    {
+      "recession": "COVID (2020)",
+      "weights": {
+        "probit": 0.5,
+        "random_forest": 0.5
+      }
+    }
+  ]
+}
