@@ -53,6 +53,10 @@ class RecessionDataAcquisition:
                 # dead-series detector below would drop it anyway.
                 'T10Y2Y': 'Treasury 10Y-2Y Spread',
                 'T10Y3M': 'Treasury 10Y-3M Spread',
+                # GS10 is fetched as a raw constituent so we can reconstruct
+                # T10Y3M = GS10 - TB3MS for pre-1982 history (FRED's pre-built
+                # T10Y3M series starts 1982-01; GS10 starts 1953-04).
+                'GS10': '10-Year Treasury Constant Maturity Rate',
                 'GS2': '2-Year Treasury Constant Maturity Rate',
                 'TB3MS': '3-Month Treasury Bill Secondary Market Rate',
                 'PERMIT': 'Building Permits',
@@ -284,6 +288,89 @@ class RecessionDataAcquisition:
     # Feature engineering
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _reconstruct_term_spreads(df: pd.DataFrame) -> pd.DataFrame:
+        """Fill pre-1982 ``leading_T10Y3M`` via ``GS10 - TB3MS`` with a
+        basis-offset correction.
+
+        FRED's pre-built ``T10Y3M`` is constant-maturity 10Y minus
+        constant-maturity 3M, both on bond-equivalent yield basis. ``TB3MS``
+        is the 3-month Treasury Bill secondary-market rate on **discount**
+        basis. Discount and bond-equivalent yields are not identical, so
+        ``GS10 - TB3MS`` carries a small systematic offset (median ≈ +11 bps
+        on the 1982-2026 overlap; std ≈ 20 bps; worst-case ~125 bps during
+        early-1980s rate volatility).
+
+        For pre-1982 we have no ground-truth ``T10Y3M``; ``GS3M`` (the
+        constant-maturity counterpart) only starts 1981-09. So we use
+        ``GS10 - TB3MS`` and apply the **overlap-period median deviation**
+        as a constant offset to align the reconstructed pre-1982 values
+        with the published-series scale. This preserves recession-relevant
+        dynamics (inversion timing, depth, duration) which are unaffected
+        by a constant level shift.
+
+        Validation: median |deviation| of the corrected reconstruction must
+        be near zero (by construction). Mean absolute residual >0.30pp logs
+        a warning; >1.0pp raises (catches wrong-series swaps or sign flips).
+        """
+        gs10_col = 'leading_GS10'
+        tb3ms_col = 'leading_TB3MS'
+        t10y3m_col = 'leading_T10Y3M'
+        if gs10_col not in df.columns or tb3ms_col not in df.columns:
+            return df
+
+        df = df.copy()
+        raw_reconstructed = df[gs10_col] - df[tb3ms_col]
+        offset = 0.0
+        overlap_mask = pd.Series(False, index=df.index)
+        if t10y3m_col in df.columns:
+            overlap_mask = df[t10y3m_col].notna() & raw_reconstructed.notna()
+            if overlap_mask.any():
+                deviation = df[t10y3m_col][overlap_mask] - raw_reconstructed[overlap_mask]
+                offset = float(deviation.median())
+                corrected = raw_reconstructed + offset
+                residual = (df[t10y3m_col][overlap_mask] - corrected[overlap_mask]).abs()
+                mad = float(residual.mean())
+                p95 = float(residual.quantile(0.95))
+                if mad > 1.0:
+                    raise ValueError(
+                        f"T10Y3M reconstruction failed: mean abs residual "
+                        f"{mad:.4f}pp exceeds 1.0pp after offset correction; "
+                        f"check series IDs / sign convention."
+                    )
+                if mad > 0.30:
+                    logger.warning(
+                        "T10Y3M reconstruction: offset=%+.4fpp, mean abs "
+                        "residual %.4fpp (p95 %.4fpp) on %d overlap months. "
+                        "Above warn threshold (0.30pp); pre-1982 fill is "
+                        "approximate.",
+                        offset, mad, p95, int(overlap_mask.sum()),
+                    )
+                else:
+                    logger.info(
+                        "T10Y3M reconstruction validated: offset=%+.4fpp, "
+                        "mean abs residual %.4fpp (p95 %.4fpp) on %d overlap "
+                        "months.",
+                        offset, mad, p95, int(overlap_mask.sum()),
+                    )
+            reconstructed = raw_reconstructed + offset
+            df[t10y3m_col] = df[t10y3m_col].combine_first(reconstructed)
+            mask = df[t10y3m_col].notna() & ~overlap_mask & reconstructed.notna()
+        else:
+            df[t10y3m_col] = raw_reconstructed
+            mask = raw_reconstructed.notna()
+        df['leading_T10Y3M_RECONSTRUCTED_MASK'] = mask.astype(float)
+        df['leading_T10Y3M_RECONSTRUCTION_OFFSET'] = offset
+        n_filled = int(mask.sum())
+        if n_filled > 0:
+            first_filled = df.index[mask][0]
+            logger.info(
+                "T10Y3M reconstruction filled %d months (earliest: %s, "
+                "offset applied: %+.4fpp)",
+                n_filled, first_filled.strftime('%Y-%m'), offset,
+            )
+        return df
+
     def engineer_features(self, df):
         """
         Engineer features from raw indicators.
@@ -295,6 +382,11 @@ class RecessionDataAcquisition:
         4. Sahm Rule: unemployment rate momentum trigger (Sahm 2019)
         """
         logger.info("Engineering features...")
+
+        # Reconstruct T10Y3M from raw constituents for pre-1982 history.
+        # Runs BEFORE df_eng is built so reconstructed values flow into every
+        # downstream tier (term-spread dynamics, FFR_x_SPREAD, T10Y3M_Z, etc.).
+        df = self._reconstruct_term_spreads(df)
 
         df_eng = df.copy()
         # Exclude RECESSION and reference model columns from feature engineering

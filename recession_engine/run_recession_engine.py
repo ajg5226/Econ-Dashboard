@@ -20,6 +20,8 @@ def main():
     parser.add_argument("--max-features", type=int, default=None, help="Maximum selected features")
     parser.add_argument("--threshold-override", type=float, default=None,
                         help="Optional manual threshold override in [0,1]")
+    parser.add_argument("--start-date", type=str, default=None,
+                        help="FRED data fetch start (YYYY-MM-DD); defaults to runtime config")
     args = parser.parse_args()
 
     ok = run_update_job(
@@ -27,6 +29,7 @@ def main():
         train_end_date=args.train_end,
         max_features=args.max_features,
         threshold_override=args.threshold_override,
+        start_date=args.start_date,
     )
     return 0 if ok else 1
 

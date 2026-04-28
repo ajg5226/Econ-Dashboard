@@ -33,6 +33,10 @@ SCHEDULER_INTERVALS = {
 DEFAULT_CONFIG = {
     'interval': 'weekly',
     'horizon_months': 6,
+    # FRED data fetch start. '1970-01-01' is the historical default;
+    # '1959-01-01' enables extended history once the T10Y3M reconstruction
+    # in data_acquisition._reconstruct_term_spreads is wired in.
+    'start_date': '1970-01-01',
     'train_end_date': None,
     'max_features': 50,
     'threshold_override': None,
@@ -103,6 +107,21 @@ def _validate_config(config: dict) -> dict:
                 train_end,
             )
             validated['train_end_date'] = None
+
+    start = validated.get('start_date')
+    if start in ("", None):
+        validated['start_date'] = DEFAULT_CONFIG['start_date']
+    else:
+        try:
+            validated['start_date'] = date.fromisoformat(str(start).strip()).isoformat()
+        except (TypeError, ValueError):
+            logger.warning(
+                "Ignoring invalid start_date %r in runtime config; expected YYYY-MM-DD. "
+                "Reverting to default %s.",
+                start,
+                DEFAULT_CONFIG['start_date'],
+            )
+            validated['start_date'] = DEFAULT_CONFIG['start_date']
 
     try:
         validated['max_features'] = int(validated.get('max_features', 50))

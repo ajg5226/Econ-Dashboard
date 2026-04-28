@@ -813,7 +813,8 @@ def _persist_model_bundle(*, bundle: dict, models_dir: Path, horizon_months: int
 def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
                    threshold_override=None, strict_vintage_search=False,
                    search_only=False, feature_variant="hybrid",
-                   variant_output_dir=None, benchmark_members="off"):
+                   variant_output_dir=None, benchmark_members="off",
+                   start_date=None):
     """
     Main update job function
 
@@ -833,12 +834,16 @@ def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
             members (Hamilton JHGDPBRINDX wrapper, Chauvet-Piger RECPROUSM156N
             wrapper, Wright 2006 probit); ``'off'`` (default) preserves current
             production behavior.
+        start_date: FRED data fetch start (YYYY-MM-DD). Defaults to runtime config
+            (currently '1970-01-01'). Set to '1959-01-01' to enable extended
+            history via T10Y3M reconstruction.
     """
     runtime_config = load_runtime_config()
     horizon_months = runtime_config['horizon_months'] if horizon_months is None else horizon_months
     train_end_date = runtime_config['train_end_date'] if train_end_date is None else train_end_date
     max_features = runtime_config['max_features'] if max_features is None else max_features
     threshold_override = runtime_config['threshold_override'] if threshold_override is None else threshold_override
+    start_date = runtime_config.get('start_date', '1970-01-01') if start_date is None else start_date
 
     logger.info("=" * 100)
     logger.info("SCHEDULER UPDATE JOB STARTED (v2 — literature-informed)")
@@ -876,7 +881,7 @@ def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
         logger.info("=" * 100)
 
         acq = RecessionDataAcquisition(fred_api_key=fred_api_key)
-        df_raw = acq.fetch_data(start_date='1970-01-01')
+        df_raw = acq.fetch_data(start_date=start_date)
 
         logger.info("✓ Raw data: %d months, %d indicators", df_raw.shape[0], df_raw.shape[1])
 

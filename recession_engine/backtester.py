@@ -91,6 +91,7 @@ PUBLICATION_LAGS = {
     'leading_T10Y2Y': 0,         # Market data — real-time
     'leading_T10Y3M': 0,
     'leading_GS2': 0,            # Market data — real-time
+    'leading_GS10': 0,           # Market data — real-time (T10Y3M reconstruction constituent)
     'leading_TB3MS': 0,          # Market data — real-time
     'monetary_DFF': 0,
     'monetary_BAA10Y': 0,
