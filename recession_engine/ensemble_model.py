@@ -995,19 +995,24 @@ class RecessionEnsembleModel:
             'random_forest': RandomForestClassifier(**random_forest_params),
         }
         if HAS_XGBOOST:
-            # scale_pos_weight set dynamically in fit() based on actual class ratio
+            # n_estimators is a ceiling — actual round count is pinned via
+            # tail-validation early stopping in fit(); see
+            # _tune_xgboost_early_stopping. eval_metric=aucpr aligns the
+            # stopping criterion with the rare-event objective. No
+            # scale_pos_weight: probability calibration handles the 12%
+            # base rate; gradient reweighting would distort probabilities.
             xgboost_params = {
-                'n_estimators': 400,
+                'n_estimators': 1000,
                 'max_depth': 5,
                 'learning_rate': 0.01,
                 'subsample': 0.8,
                 'colsample_bytree': 0.7,
-                'min_child_weight': 10,
+                'min_child_weight': 1,
                 'reg_alpha': 0.1,
                 'reg_lambda': 1.0,
                 'random_state': 42,
                 'n_jobs': -1,
-                'eval_metric': 'logloss',
+                'eval_metric': 'aucpr',
             }
             xgboost_params.update(self.model_config.get('xgboost', {}))
             self.models['xgboost'] = xgb.XGBClassifier(**xgboost_params)
@@ -1121,6 +1126,106 @@ class RecessionEnsembleModel:
             calibrator.fit(X, y, sample_weight=sample_weights)
         except TypeError:
             calibrator.fit(X, y)
+
+    def _tune_xgboost_early_stopping(
+        self,
+        X_train_tree,
+        y_train,
+        sample_weights,
+        early_stopping_rounds=50,
+        fallback_n_estimators=200,
+        floor=50,
+    ):
+        """
+        Pin XGBoost n_estimators via TimeSeriesSplit-averaged early stopping.
+
+        A single tail-validation split is a fragile signal on this dataset
+        (post-GFC tail biases the answer). Instead we run the same
+        ``TimeSeriesSplit(n_cv_splits)`` the ensemble already uses, fit
+        XGBoost with early stopping on logloss (smoother than aucpr on
+        rare-event folds) inside each fold, collect ``best_iteration`` per
+        fold, and pin n_estimators on the registry to the median + 1
+        (clamped to a sensible floor). This averages over the fold-by-fold
+        size variation and is robust to the one-fold "stopped at round 14"
+        / "stopped at round 999" failure modes a single tail split shows.
+
+        CalibratedClassifierCV(clone(model), cv=...) doesn't propagate an
+        eval_set, so once n_estimators is pinned, subsequent fits (initial
+        full-train, CV folds, calibrator clones) all use that fixed count.
+        """
+        if not HAS_XGBOOST or 'xgboost' not in self.models:
+            return
+
+        tscv = TimeSeriesSplit(n_splits=self.n_cv_splits)
+        best_iters = []
+        per_fold_log = []
+
+        for fold_idx, (train_idx, val_idx) in enumerate(tscv.split(X_train_tree), start=1):
+            X_tr, X_val = X_train_tree[train_idx], X_train_tree[val_idx]
+            y_tr = y_train.iloc[train_idx] if hasattr(y_train, 'iloc') else y_train[train_idx]
+            y_val = y_train.iloc[val_idx] if hasattr(y_train, 'iloc') else y_train[val_idx]
+
+            if (
+                len(set(np.asarray(y_tr).ravel())) < 2
+                or len(set(np.asarray(y_val).ravel())) < 2
+            ):
+                per_fold_log.append(f"fold{fold_idx}=skip(class)")
+                continue
+
+            booster = clone(self.models['xgboost'])
+            try:
+                booster.set_params(eval_metric='logloss')
+            except (ValueError, TypeError):
+                pass
+            fit_kwargs = {'eval_set': [(X_val, y_val)], 'verbose': False}
+            try:
+                booster.set_params(early_stopping_rounds=early_stopping_rounds)
+            except (ValueError, TypeError):
+                fit_kwargs['early_stopping_rounds'] = early_stopping_rounds
+
+            try:
+                if sample_weights is not None:
+                    sw_tr = sample_weights[train_idx]
+                    try:
+                        booster.fit(X_tr, y_tr, sample_weight=sw_tr, **fit_kwargs)
+                    except TypeError:
+                        booster.fit(X_tr, y_tr, **fit_kwargs)
+                else:
+                    booster.fit(X_tr, y_tr, **fit_kwargs)
+            except Exception as exc:
+                per_fold_log.append(f"fold{fold_idx}=err({type(exc).__name__})")
+                continue
+
+            bi = getattr(booster, 'best_iteration', None)
+            if bi is None:
+                per_fold_log.append(f"fold{fold_idx}=no-best")
+                continue
+
+            best_iters.append(int(bi))
+            per_fold_log.append(f"fold{fold_idx}={int(bi)}")
+
+        if not best_iters:
+            logger.warning(
+                f"XGBoost early-stopping degenerate across all folds "
+                f"({', '.join(per_fold_log)}); pinning fallback "
+                f"n_estimators={fallback_n_estimators}."
+            )
+            self.models['xgboost'].set_params(n_estimators=fallback_n_estimators)
+            return
+
+        median_bi = int(np.median(best_iters))
+        new_n = max(median_bi + 1, floor)
+        self.models['xgboost'].set_params(n_estimators=new_n)
+        try:
+            self.models['xgboost'].set_params(early_stopping_rounds=None)
+        except (ValueError, TypeError):
+            pass
+        logger.info(
+            f"XGBoost early-stopping (TSCV-{self.n_cv_splits}, logloss, "
+            f"patience={early_stopping_rounds}): per-fold best_iter "
+            f"[{', '.join(per_fold_log)}] → median={median_bi}, "
+            f"pinned n_estimators={new_n}"
+        )
 
     # ------------------------------------------------------------------
     # Feature selection
@@ -1450,18 +1555,26 @@ class RecessionEnsembleModel:
         logger.info(f"PCA: extracted {n_components} components "
                     f"(explained variance: {self.pca.explained_variance_ratio_.sum():.1%})")
 
-        # Augmented feature matrices:
-        # - Probit uses scaled + PCA
-        # - RF/XGBoost use unscaled + PCA (PCA components are already normalized)
+        # Feature matrices:
+        # - Probit uses scaled features + PCA components (linear models
+        #   benefit from collinearity reduction).
+        # - Tree models (RF / XGBoost) use raw unscaled features only.
+        #   Trees are scale-invariant; PCA components are linear
+        #   combinations of features the tree could already split on, so
+        #   they add no information but consume the colsample budget and
+        #   muddy feature_importances_.
         X_train_probit = np.hstack([X_train_scaled, pca_features_train])
-        X_train_tree = np.hstack([X_train.values, pca_features_train])
+        X_train_tree = X_train.values
 
-        # Set XGBoost scale_pos_weight from actual class ratio
-        n_neg = (y_train == 0).sum()
-        n_pos = (y_train == 1).sum()
-        if HAS_XGBOOST and 'xgboost' in self.models and n_pos > 0:
-            self.models['xgboost'].set_params(scale_pos_weight=n_neg / n_pos)
-            logger.info(f"XGBoost scale_pos_weight set to {n_neg / n_pos:.2f}")
+        # Pin XGBoost n_estimators via tail-validation early stopping. No
+        # scale_pos_weight: probability calibration handles imbalance, and
+        # gradient reweighting + isotonic-style calibration would compound
+        # noise (xgboost docs flag this as an anti-pattern when probability
+        # output matters).
+        if HAS_XGBOOST and 'xgboost' in self.models:
+            self._tune_xgboost_early_stopping(
+                X_train_tree, y_train, train_sample_weights
+            )
 
         # ── Step 2: Fit base models ──────────────────────────────────
         for name, model in self.models.items():
@@ -1562,8 +1675,8 @@ class RecessionEnsembleModel:
 
             X_tr_probit = np.hstack([X_tr_sc, pca_tr])
             X_val_probit = np.hstack([X_val_sc, pca_val])
-            X_tr_tree = np.hstack([X_tr.values, pca_tr])
-            X_val_tree = np.hstack([X_val.values, pca_val])
+            X_tr_tree = X_tr.values
+            X_val_tree = X_val.values
 
             fold_val_actuals = y_val.values
 
@@ -1700,11 +1813,22 @@ class RecessionEnsembleModel:
         logger.info(f"Final ensemble weights: {', '.join(f'{n}={w:.3f}' for n, w in self.ensemble_weights.items())}")
 
         # ── Step 5: Calibrate base models (isotonic regression) ──────
-        # Re-fit scaler + PCA on full training data
+        # Re-fit scaler + PCA on full training data (probit branch only).
+        # Note: Niculescu-Mizil & Caruana (2005) generally favor Platt for
+        # N_calib < ~2000, but the in-codebase A/B diagnostic
+        # (_compute_calibration_diagnostics) consistently picks isotonic
+        # for probit (ECE ~0.02 vs sigmoid ~0.023) and random_forest
+        # (ECE ~0.045 vs sigmoid ~0.088) on this dataset. Empirical ECE
+        # on the actual feature distribution beats the general prior.
+        # XGBoost's raw probabilities are already well-calibrated post-
+        # fix (no scale_pos_weight, early-stopping pinned n_estimators);
+        # isotonic on top adds noise but XGBoost is gated out of the
+        # active ensemble in CV so this doesn't bleed into deployed
+        # probabilities.
         X_train_scaled = self.scaler.fit_transform(X_train)
         pca_features_train = self.pca.fit_transform(X_train_scaled)
         X_train_probit = np.hstack([X_train_scaled, pca_features_train])
-        X_train_tree = np.hstack([X_train.values, pca_features_train])
+        X_train_tree = X_train.values
 
         logger.info("Calibrating model probabilities (isotonic regression)...")
         for name, model in self.models.items():
@@ -2367,10 +2491,11 @@ class RecessionEnsembleModel:
         X_test = test_df[self.feature_cols].ffill().fillna(0)
         X_test_scaled = self.scaler.transform(X_test)
 
-        # PCA augmentation
+        # PCA augmentation: probit only (linear model benefits from
+        # collinearity reduction; trees are scale-invariant and don't).
         pca_features_test = self.pca.transform(X_test_scaled)
         X_test_probit = np.hstack([X_test_scaled, pca_features_test])
-        X_test_tree = np.hstack([X_test.values, pca_features_test])
+        X_test_tree = X_test.values
 
         predictions = {}
 

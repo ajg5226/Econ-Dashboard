@@ -1,0 +1,33 @@
+================================================================================
+LORO EVALUATION SUMMARY
+================================================================================
+Generated: 2026-04-28T18:45:30.075734+00:00
+Git SHA: 976829a
+Horizon: 6 months  |  Max features: 50  |  Skip Markov: False
+Start date: from cached indicators.csv (production state)
+
+Per-recession results (sorted by Recession):
+           Recession Evaluation_Scope      AUC    Brier  Peak_Prob Crossed_Threshold_Fixed  Lead_Months  Lead_Months_Fixed
+Oil Crisis (1973-75)    informational      NaN      NaN        NaN                     NaN          NaN                NaN
+    Volcker I (1980)    informational 0.839286 0.301851   0.351691                   False     4.040736                NaN
+Volcker II (1981-82)    informational 0.959900 0.227526   0.469836                    True     6.964520          -6.044678
+S&L Crisis (1990-91)         in_scope 0.684211 0.210173   0.473684                    True     6.964520           6.964520
+      Dot-com (2001)         in_scope 0.777328 0.322943   0.161418                   False          NaN                NaN
+       GFC (2007-09)         in_scope 1.000000 0.028387   0.958407                    True     5.026281           0.000000
+        COVID (2020)         in_scope 0.518797 0.245439   0.686991                    True    -6.011827          -6.011827
+
+--- IN_SCOPE (n=4) ---
+  mean_auc: 0.7451
+  mean_brier: 0.2017
+  mean_peak_prob: 0.5701
+  mean_lead_months_own: 1.9930
+  mean_lead_months_fixed: 0.3176
+  n_crossed_threshold_fixed: 3
+
+--- INFORMATIONAL (n=2) ---
+  mean_auc: 0.8996
+  mean_brier: 0.2647
+  mean_peak_prob: 0.4108
+  mean_lead_months_own: 5.5026
+  mean_lead_months_fixed: -6.0447
+  n_crossed_threshold_fixed: 1
