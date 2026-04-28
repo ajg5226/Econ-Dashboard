@@ -59,7 +59,6 @@ except ImportError:  # pragma: no cover - when loaded as top-level module
 
 warnings.filterwarnings('ignore')
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 try:

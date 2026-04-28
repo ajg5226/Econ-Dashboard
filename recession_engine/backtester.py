@@ -884,7 +884,7 @@ class RecessionBacktester:
                     logger.info(f"  Lead time: {lead_months:.0f} months before recession")
 
             except Exception as e:
-                logger.error(f"  FAILED: {e}")
+                logger.error(f"  FAILED [{label}]: {e}")
                 results.append({
                     'Recession': label,
                     'Train_End': train_end,
@@ -983,7 +983,7 @@ class RecessionBacktester:
                 logger.info(f"  Vintage sim prob:   {vintage_prob:.1%}" if not np.isnan(vintage_prob) else "  Vintage: N/A")
 
             except Exception as e:
-                logger.error(f"  FAILED: {e}")
+                logger.error(f"  FAILED [{label}]: {e}")
                 results.append({
                     'Date': pred_date,
                     'Label': label,

@@ -23,7 +23,6 @@ import logging
 import warnings
 warnings.filterwarnings('ignore')
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
