@@ -70,12 +70,14 @@ except Exception as e:  # pragma: no cover - environment-specific
     logger.warning("XGBoost could not be imported and will be disabled: %s", e)
 
 try:
-    from statsmodels.tsa.regime_switching.markov_regression import MarkovRegression
+    from statsmodels.tsa.regime_switching.markov_autoregression import (
+        MarkovAutoregression,
+    )
     HAS_MARKOV = True
 except Exception as e:  # pragma: no cover - environment-specific
     HAS_MARKOV = False
-    MarkovRegression = None  # type: ignore
-    logger.warning("statsmodels MarkovRegression not available: %s", e)
+    MarkovAutoregression = None  # type: ignore
+    logger.warning("statsmodels MarkovAutoregression not available: %s", e)
 
 try:
     # Force single-threaded BLAS to avoid segfaults when statsmodels (OpenBLAS)
@@ -97,356 +99,270 @@ except ImportError as e:
 
 class MarkovSwitchingWrapper:
     """
-    Sklearn-like wrapper for a 3-regime Markov-switching model with
-    time-varying transition probabilities (TVTP) and isotonic calibration.
+    Sklearn-like wrapper for a Filardo (1994)-style two-regime AR(4)
+    Markov-switching model on industrial-production growth, with isotonic
+    calibration of the nowcast filtered probability against the supervised
+    t+6 target.
 
     Literature basis:
-    - Hamilton (1989): Core regime-switching framework
-    - Filardo (1994): TVTP — leading indicators drive transition probabilities
-    - Diebold et al. (1994): TVTP improves recession dating accuracy
-    - Chauvet & Hamilton (2006): Real-time recession probability estimation
-    - FEDS Notes (2026): 3-state model distinguishing expansion,
-      U-shaped (recovery) recession, and L-shaped (hysteresis) recession
+    - Hamilton (1989): MS-AR(4) on real GNP growth, mean-only switching,
+      2 regimes (expansion / recession). Quarterly frequency.
+    - Filardo (1994): the same MS-AR(4) framework on *monthly* industrial
+      production growth. INDPRO is the canonical monthly substitute when
+      quarterly GNP isn't available — and on this project's data it gives
+      cleanly mean-separated regime identification where PAYEMS does not.
 
-    3-state design:
-    - Regime 0 (expansion): highest composite mean, normal growth
-    - Regime 1 (mild contraction): intermediate mean, mild/short recessions
-    - Regime 2 (deep contraction): lowest mean, severe recessions
-    - Recession probability = P(mild) + P(deep)
+    Spec:
+    - Dependent variable: 100·Δlog(INDPRO), computed from the level column.
+      Predict-time uses a unified train+test level series so the diff at
+      the train/test boundary is correct (the prior level comes from the
+      tail of training, not from a fillna(0) hack).
+    - MarkovAutoregression(k_regimes=2, order=4, switching_ar=False,
+      switching_variance=True). Variance switching is needed for monthly
+      regime identification (see Krolzig 1998) — empirically the EM
+      optimizer fails to separate regimes on monthly INDPRO without it.
+    - search_reps=20: multi-start to escape EM local optima. A fixed numpy
+      seed is set inside fit() (and restored on exit) for reproducibility
+      across re-runs.
+    - Recession regime is identified post-fit as the lower-mean state.
+    - Prediction runs mod.filter(trained_params) on the unified series and
+      maps filtered_marginal_probabilities back to X_df's index. The
+      Hamilton filter at time t depends only on y_1..y_t, so this is
+      forward-only — no future leakage.
+    - Isotonic regression maps the raw recession nowcast to the supervised
+      t+6 NBER target so the output is consumable by the ensemble.
 
-    Key improvements:
-    1. 3 regimes instead of 2 — better calibration for mild vs severe recessions
-    2. TVTP: SAHM indicator and NFCI influence transition probabilities
-    3. Isotonic calibration of combined recession probability
-    4. Fixed-parameter prediction via smooth() (no re-fitting on test data)
+    External API preserved: __init__(), fit(X_df, y), predict_proba(X_df),
+    .fitted, ._calibrator_fitted.
     """
 
-    # ── Composite indicators: sign-aligned so higher = stronger economy ──
-    COMPOSITE_INDICATORS = {
-        'leading_T10Y3M': +1,              # Positive spread = expansion
-        'NEAR_TERM_FORWARD_SPREAD': +1,    # Engstrom-Sharpe: short-term rate expectations
-        'SAHM_INDICATOR': -1,              # Higher = closer to recession trigger
-        'financial_NFCI': -1,              # Higher = tighter conditions
-        'EBP_PROXY': -1,                   # Higher = credit stress (Gilchrist-Zakrajsek)
-        'CREDIT_STRESS_INDEX': -1,         # Higher = financial stress
-    }
-
-    # ── TVTP covariates: these influence transition probabilities ──
-    # The key insight: yield curve inversion alone shouldn't lock the model
-    # in recession regime if labor market and financial conditions are healthy.
-    TVTP_INDICATORS = {
-        'SAHM_INDICATOR': -1,       # Low SAHM = strong labor market → favor expansion
-        'financial_NFCI': -1,       # Low NFCI = loose conditions → favor expansion
-    }
-
-    N_REGIMES = 3  # expansion, mild contraction, deep contraction
+    LEVEL_COL = 'coincident_INDPRO'
+    GROWTH_COL = 'coincident_INDPRO_MoM'
+    AR_ORDER = 4
+    K_REGIMES = 2
+    MIN_OBS = 60
+    FIT_SEED = 42
 
     def __init__(self):
         self.result = None
-        self.recession_regimes = []  # indices of contraction regimes (mild + deep)
+        self.recession_regime = None
         self.expansion_regime = None
-        self.training_composite = None
-        self.training_tvtp = None
-        self._composite_means = {}
-        self._composite_stds = {}
-        self._tvtp_means = {}
-        self._tvtp_stds = {}
+        # Stored at fit so predict can rebuild a unified Δlog series across
+        # the train/test boundary instead of re-diffing inside the test
+        # slice (which would NaN-out the first test row).
+        self._training_level = None
         self._trained_params = None
         self.fitted = False
-        self._use_tvtp = False
 
         # Isotonic calibration (fitted during fit, applied during predict)
         self._calibrator = None
         self._calibrator_fitted = False
 
-    def _build_composite(self, df, fit_stats=False):
-        """Build sign-aligned composite from available indicators."""
-        available = {c: s for c, s in self.COMPOSITE_INDICATORS.items()
-                     if c in df.columns}
-        if len(available) == 0:
-            return None
+    def _extract_level(self, df):
+        """Return INDPRO level as a pd.Series, or None if column missing."""
+        if self.LEVEL_COL in df.columns:
+            return df[self.LEVEL_COL].astype(float)
+        return None
 
-        parts = []
-        for col, sign in available.items():
-            s = df[col]
-            if fit_stats:
-                mu, sigma = s.mean(), s.std() + 1e-8
-                self._composite_means[col] = mu
-                self._composite_stds[col] = sigma
-            else:
-                mu = self._composite_means.get(col, s.mean())
-                sigma = self._composite_stds.get(col, s.std() + 1e-8)
-            parts.append(sign * (s - mu) / sigma)
-
-        composite = pd.concat(parts, axis=1).mean(axis=1)
-        return composite
-
-    def _build_tvtp_covariates(self, df, fit_stats=False):
-        """Build TVTP covariate matrix (standardized, sign-aligned)."""
-        available = {c: s for c, s in self.TVTP_INDICATORS.items()
-                     if c in df.columns}
-        if len(available) < 1:
-            return None
-
-        parts = []
-        for col, sign in available.items():
-            s = df[col]
-            if fit_stats:
-                mu, sigma = s.mean(), s.std() + 1e-8
-                self._tvtp_means[col] = mu
-                self._tvtp_stds[col] = sigma
-            else:
-                mu = self._tvtp_means.get(col, s.mean())
-                sigma = self._tvtp_stds.get(col, s.std() + 1e-8)
-            parts.append(sign * (s - mu) / sigma)
-
-        tvtp_df = pd.concat(parts, axis=1)
-        # Add intercept column (required by statsmodels TVTP)
-        tvtp_df.insert(0, '_const', 1.0)
-        return tvtp_df
+    def _level_to_endog(self, level):
+        """100·Δlog of a level series, dropping the leading NaN."""
+        return (100.0 * np.log(level / level.shift(1))).dropna()
 
     def fit(self, X_df, y):
         """
-        Fit Markov-switching model with TVTP and isotonic calibration.
-
-        Steps:
-        1. Build composite signal from 6 macro indicators
-        2. Build TVTP covariates from labor market + financial conditions
-        3. Fit Hamilton model with TVTP (fall back to constant if TVTP fails)
-        4. Identify recession regime (lower composite mean)
-        5. Calibrate filtered probabilities via isotonic regression on y
+        Fit Hamilton-style MS-AR(4) on INDPRO growth, then learn an isotonic
+        mapping from the filtered recession probability to the supervised t+6
+        target so the output participates in the downstream ensemble.
         """
         from sklearn.isotonic import IsotonicRegression
 
-        composite = self._build_composite(X_df, fit_stats=True)
-        if composite is None:
-            logger.warning("MarkovSwitching: no composite indicators found, skipping")
+        if not HAS_MARKOV:
+            logger.warning("MarkovSwitching: statsmodels unavailable, skipping")
             self.fitted = False
             return self
 
-        tvtp_df = self._build_tvtp_covariates(X_df, fit_stats=True)
-
-        # Align composite and TVTP on shared index (drop NaN rows)
-        if tvtp_df is not None:
-            shared_idx = composite.dropna().index.intersection(tvtp_df.dropna().index)
-        else:
-            shared_idx = composite.dropna().index
-        composite = composite.loc[shared_idx]
-        if tvtp_df is not None:
-            tvtp_df = tvtp_df.loc[shared_idx]
-
-        if len(composite) < 60:
-            logger.warning("MarkovSwitching: too few observations (%d), skipping",
-                           len(composite))
+        level = self._extract_level(X_df)
+        if level is None:
+            logger.warning(
+                "MarkovSwitching: INDPRO level column '%s' not found; skipping",
+                self.LEVEL_COL,
+            )
             self.fitted = False
             return self
 
-        # ── Try 3-regime TVTP model, then 3-regime constant, then 2-regime fallback ──
-        self._use_tvtp = False
-        n_regimes = self.N_REGIMES
+        level_clean = level.dropna()
+        endog_clean = self._level_to_endog(level_clean)
+        if len(endog_clean) < self.MIN_OBS:
+            logger.warning(
+                "MarkovSwitching: too few observations (%d < %d), skipping",
+                len(endog_clean), self.MIN_OBS,
+            )
+            self.fitted = False
+            return self
 
-        # Attempt 1: 3-regime TVTP
-        if tvtp_df is not None and len(tvtp_df.columns) >= 2:
-            try:
-                mod = MarkovRegression(
-                    composite.values,
-                    k_regimes=n_regimes,
-                    trend='c',
-                    switching_variance=True,
-                    exog_tvtp=tvtp_df.values,
-                )
-                self.result = mod.fit(maxiter=500, disp=False)
-                self._use_tvtp = True
-                logger.info("MarkovSwitching: %d-regime TVTP model fitted "
-                            "(%d covariates)", n_regimes, tvtp_df.shape[1] - 1)
-            except Exception as e:
-                logger.warning("MarkovSwitching: %d-regime TVTP failed (%s)",
-                               n_regimes, e)
-                self.result = None
+        # Save state, seed for reproducibility across re-runs (search_reps
+        # uses np.random globally), restore after fit.
+        _rng_state = np.random.get_state()
+        try:
+            np.random.seed(self.FIT_SEED)
+            mod = MarkovAutoregression(
+                endog_clean.values,
+                k_regimes=self.K_REGIMES,
+                order=self.AR_ORDER,
+                switching_ar=False,
+                switching_variance=True,
+            )
+            # search_reps spawns multiple random starts; the EM landscape on
+            # monthly INDPRO AR(4) is multi-modal and a single start can land
+            # on a degenerate single-regime fit.
+            self.result = mod.fit(disp=False, search_reps=20)
+        except Exception as e:
+            logger.warning("MarkovSwitching fit failed: %s", e)
+            self.result = None
+            self.fitted = False
+            return self
+        finally:
+            np.random.set_state(_rng_state)
 
-        # Attempt 2: 3-regime constant transitions
-        if self.result is None:
-            try:
-                mod = MarkovRegression(
-                    composite.values,
-                    k_regimes=n_regimes,
-                    trend='c',
-                    switching_variance=True,
-                )
-                self.result = mod.fit(maxiter=500, disp=False)
-                self._use_tvtp = False
-                logger.info("MarkovSwitching: %d-regime constant model fitted",
-                            n_regimes)
-            except Exception as e:
-                logger.warning("MarkovSwitching: %d-regime constant failed (%s)",
-                               n_regimes, e)
-                self.result = None
-
-        # Attempt 3: 2-regime fallback (simpler, more stable)
-        if self.result is None:
-            n_regimes = 2
-            try:
-                mod = MarkovRegression(
-                    composite.values,
-                    k_regimes=2,
-                    trend='c',
-                    switching_variance=True,
-                )
-                self.result = mod.fit(maxiter=300, disp=False)
-                self._use_tvtp = False
-                logger.info("MarkovSwitching: 2-regime fallback model fitted")
-            except Exception as e:
-                logger.warning("MarkovSwitching fit failed completely: %s", e)
-                self.result = None
-                self.fitted = False
-                return self
-
-        # ── Identify regimes by composite mean ──
-        # Higher composite mean = stronger economy (expansion)
+        # Lower-mean regime is recession. With 2 regimes, one comparison.
         param_names = self.result.model.param_names
-        means = []
-        for i in range(n_regimes):
-            idx = param_names.index(f'const[{i}]')
-            means.append(float(self.result.params[idx]))
+        means = [
+            float(self.result.params[param_names.index(f'const[{i}]')])
+            for i in range(self.K_REGIMES)
+        ]
+        if means[0] <= means[1]:
+            self.recession_regime, self.expansion_regime = 0, 1
+        else:
+            self.recession_regime, self.expansion_regime = 1, 0
 
-        # Sort regimes by mean: highest = expansion, lower = contraction
-        sorted_regimes = sorted(range(n_regimes), key=lambda i: means[i], reverse=True)
-        self.expansion_regime = sorted_regimes[0]
-        self.recession_regimes = sorted_regimes[1:]  # all non-expansion regimes
-        self._n_regimes_actual = n_regimes
-
-        # Store trained parameters and data for prediction
         self._trained_params = self.result.params.copy()
-        self.training_composite = composite.values.copy()
-        if self._use_tvtp:
-            self.training_tvtp = tvtp_df.values.copy()
+        # Store the level series (not just the diff) so predict can rebuild
+        # the unified Δlog across train/test correctly.
+        self._training_level = level_clean.copy()
 
-        # ── Isotonic calibration on training data ──
-        # The raw filtered probabilities are near-binary (0.01 or 0.99).
-        # Isotonic regression learns a monotonic mapping from raw probs
-        # to actual recession frequencies, producing well-calibrated output.
-        # For 3-state model: recession prob = sum of all contraction regime probs
+        # Calibrate the raw recession nowcast against the supervised t+6
+        # target. Filtered probs from MS-AR(4) on INDPRO growth land on a
+        # natural [0, 1] continuum; isotonic learns the horizon shift.
+        # statsmodels returns filtered_marginal_probabilities of length
+        # (nobs - order) — the first AR_ORDER rows are burn-in. Align y by
+        # skipping the same rows from endog_clean.index.
         filtered = self.result.filtered_marginal_probabilities
-        raw_train_probs = sum(
-            filtered[:, r] for r in self.recession_regimes
-        )
+        raw_train_probs = filtered[:, self.recession_regime]
+        prob_index = endog_clean.index[-len(raw_train_probs):]
 
-        # Align y with the composite index
-        y_aligned = y.loc[shared_idx].values if hasattr(y, 'loc') else y
+        if hasattr(y, 'loc'):
+            y_aligned = y.reindex(prob_index)
+            y_arr = y_aligned.values
+        else:
+            y_arr = np.asarray(y)[-len(raw_train_probs):]
 
-        if len(y_aligned) == len(raw_train_probs):
+        if len(y_arr) == len(raw_train_probs) and not np.any(pd.isna(y_arr)):
             try:
                 self._calibrator = IsotonicRegression(
                     y_min=0.01, y_max=0.99, out_of_bounds='clip'
                 )
-                self._calibrator.fit(raw_train_probs, y_aligned)
+                self._calibrator.fit(raw_train_probs, y_arr)
                 self._calibrator_fitted = True
-
-                # Log calibration effect
                 cal_probs = self._calibrator.predict(raw_train_probs)
-                logger.info("MarkovSwitching calibration: raw range [%.3f, %.3f] → "
-                            "calibrated range [%.3f, %.3f]",
-                            raw_train_probs.min(), raw_train_probs.max(),
-                            cal_probs.min(), cal_probs.max())
+                logger.info(
+                    "MarkovSwitching calibration: raw range [%.3f, %.3f] -> "
+                    "calibrated range [%.3f, %.3f]",
+                    raw_train_probs.min(), raw_train_probs.max(),
+                    cal_probs.min(), cal_probs.max(),
+                )
             except Exception as e:
                 logger.warning("MarkovSwitching calibration failed: %s", e)
                 self._calibrator_fitted = False
         else:
-            logger.warning("MarkovSwitching: y length mismatch for calibration "
-                           "(%d vs %d)", len(y_aligned), len(raw_train_probs))
+            logger.warning(
+                "MarkovSwitching: y length mismatch for calibration (%d vs %d)",
+                len(y_arr), len(raw_train_probs),
+            )
             self._calibrator_fitted = False
 
         self.fitted = True
-        logger.info("MarkovSwitching fitted: %d regimes, expansion=%d, "
-                     "recession=%s, means=%s, tvtp=%s, calibrated=%s",
-                     n_regimes, self.expansion_regime,
-                     self.recession_regimes,
-                     [f"{m:.3f}" for m in means],
-                     self._use_tvtp, self._calibrator_fitted)
-
+        logger.info(
+            "MarkovSwitching fitted: k=%d, AR(%d), recession_regime=%d, "
+            "means=[%.3f, %.3f], n_obs=%d, calibrated=%s",
+            self.K_REGIMES, self.AR_ORDER, self.recession_regime,
+            means[0], means[1], len(endog_clean), self._calibrator_fitted,
+        )
         return self
 
     def predict_proba(self, X_df):
         """
-        Return (n_samples, 2) array of [P(expansion), P(recession)].
+        Return (n_samples, 2) array of [P(expansion), P(recession)] aligned
+        to X_df.index. Rows whose probability cannot be recovered (missing
+        INDPRO, or pre-AR(4) burn-in if X_df extends earlier than training)
+        get a neutral 0.5.
 
-        Uses the trained model's parameters applied to an extended
-        composite (training + test), then extracts test-period filtered
-        probabilities and applies isotonic calibration.
+        Implementation: concatenate the training INDPRO level with X_df's
+        INDPRO level, deduplicate by date (keeping the X_df value when both
+        are present), sort, compute Δlog once on the unified series, and run
+        the Hamilton filter with trained parameters. Map filtered probs back
+        to X_df.index. This avoids two bugs the naive concat-and-refilter
+        approach has:
+          (a) the train/test boundary diff is correct (uses last training
+              level, not 0);
+          (b) calling predict on training data returns the in-sample
+              filtered probs (no spurious double-pass through duplicated
+              observations).
         """
         n = len(X_df)
+        neutral = np.column_stack([np.full(n, 0.5), np.full(n, 0.5)])
 
         if not self.fitted or self.result is None:
-            return np.column_stack([np.full(n, 0.5), np.full(n, 0.5)])
+            return neutral
+        test_level = self._extract_level(X_df)
+        if test_level is None or self._training_level is None:
+            return neutral
 
-        # Build test composite using TRAINING statistics
-        test_composite = self._build_composite(X_df, fit_stats=False)
-        if test_composite is None:
-            return np.column_stack([np.full(n, 0.5), np.full(n, 0.5)])
-        test_composite = test_composite.fillna(0).values
-
-        # Build test TVTP covariates using TRAINING statistics
-        test_tvtp = None
-        if self._use_tvtp:
-            test_tvtp_df = self._build_tvtp_covariates(X_df, fit_stats=False)
-            if test_tvtp_df is not None:
-                test_tvtp = test_tvtp_df.fillna(0).values
-
-        # Concatenate training + test data
-        full_composite = np.concatenate([self.training_composite, test_composite])
-        full_tvtp = None
-        if self._use_tvtp and self.training_tvtp is not None and test_tvtp is not None:
-            full_tvtp = np.concatenate([self.training_tvtp, test_tvtp])
+        # Unified level series. Prefer the X_df values where dates overlap
+        # (they may be a more recent vintage than what fit() saw).
+        combined = pd.concat([self._training_level, test_level])
+        combined = combined[~combined.index.duplicated(keep='last')].sort_index()
+        unified_endog = self._level_to_endog(combined.dropna())
+        if len(unified_endog) <= self.AR_ORDER:
+            return neutral
 
         try:
-            # Apply trained parameters to extended series via smooth()
-            # This avoids re-estimating parameters on test data
-            n_regimes = self._n_regimes_actual
-            if self._use_tvtp and full_tvtp is not None:
-                mod = MarkovRegression(
-                    full_composite,
-                    k_regimes=n_regimes,
-                    trend='c',
-                    switching_variance=True,
-                    exog_tvtp=full_tvtp,
-                )
-            else:
-                mod = MarkovRegression(
-                    full_composite,
-                    k_regimes=n_regimes,
-                    trend='c',
-                    switching_variance=True,
-                )
-
-            # Use smooth() with trained parameters — no re-estimation
-            try:
-                res = mod.smooth(self._trained_params)
-            except Exception:
-                # Fall back to re-fitting if smooth fails
-                res = mod.fit(
-                    maxiter=300, disp=False,
-                    start_params=self._trained_params
-                )
-
-            # Extract filtered probabilities for test period
-            # For 3-state: recession prob = sum of all contraction regime probs
-            filtered = res.filtered_marginal_probabilities
-            test_probs = sum(
-                filtered[-n:, r] for r in self.recession_regimes
+            mod = MarkovAutoregression(
+                unified_endog.values,
+                k_regimes=self.K_REGIMES,
+                order=self.AR_ORDER,
+                switching_ar=False,
+                switching_variance=True,
             )
+            try:
+                res = mod.filter(self._trained_params)
+            except Exception:
+                # Rare: parameter-shape mismatch from a statsmodels version
+                # skew. Re-fit using trained params as the start.
+                res = mod.fit(disp=False, start_params=self._trained_params)
 
-            # Apply isotonic calibration if available
+            filtered = res.filtered_marginal_probabilities
+            # filtered_marginal_probabilities has shape (nobs - AR_ORDER, k)
+            # — the first AR_ORDER rows are burn-in. The corresponding dates
+            # are unified_endog.index[AR_ORDER:].
+            prob_index = unified_endog.index[-len(filtered):]
+            raw = pd.Series(filtered[:, self.recession_regime], index=prob_index)
+
+            # Reindex to X_df rows. Missing rows (INDPRO NaN, pre-burn-in)
+            # get the neutral 0.5 prior.
+            aligned = raw.reindex(X_df.index)
+            mask = aligned.notna().values
+            test_probs = aligned.fillna(0.5).values
+
             if self._calibrator_fitted and self._calibrator is not None:
-                test_probs = self._calibrator.predict(test_probs)
+                # Apply calibration only to rows that have a real raw prob.
+                test_probs[mask] = self._calibrator.predict(test_probs[mask])
 
-            # Clamp for numerical safety
             test_probs = np.clip(test_probs, 0.01, 0.99)
-
             return np.column_stack([1.0 - test_probs, test_probs])
 
         except Exception as e:
             logger.warning("MarkovSwitching predict failed: %s", e)
-            return np.column_stack([np.full(n, 0.5), np.full(n, 0.5)])
+            return neutral
 
 
 class LSTMRecessionModel:
@@ -746,10 +662,12 @@ class ChauvetPigerBenchmarkModel:
     """
     Ensemble wrapper around the Chauvet-Piger smoothed recession probability.
 
-    RECPROUSM156N (Chauvet-Piger 2008) is published by FRED on [0, 1]
-    already and represents the probability the US economy is in recession
-    based on a real-time regime-switching dynamic factor model. No rescaling
-    needed; just map NaNs to a neutral prior.
+    RECPROUSM156N (Chauvet-Piger 2008) is published by FRED on a [0, 100]
+    *percent* scale (NOT [0, 1] — this was previously misdocumented and the
+    series was being clipped, mapping every recession-adjacent month to 0.99).
+    Divide by 100 to get a [0, 1] probability. The series represents the
+    probability the US economy is in recession based on a real-time
+    regime-switching dynamic factor model.
 
     fit() is a no-op; predict_proba() reads the column from the test frame.
     """
@@ -767,7 +685,7 @@ class ChauvetPigerBenchmarkModel:
     def predict_proba(self, X_df):
         n = len(X_df)
         if self.COLUMN in X_df.columns:
-            series = X_df[self.COLUMN].astype(float)
+            series = X_df[self.COLUMN].astype(float) / 100.0
             probs = series.fillna(self.NEUTRAL_PROB).clip(0.0, 1.0).values
         else:
             probs = np.full(n, self.NEUTRAL_PROB)

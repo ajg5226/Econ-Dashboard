@@ -813,7 +813,7 @@ def _persist_model_bundle(*, bundle: dict, models_dir: Path, horizon_months: int
 def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
                    threshold_override=None, strict_vintage_search=False,
                    search_only=False, feature_variant="hybrid",
-                   variant_output_dir=None, benchmark_members="off",
+                   variant_output_dir=None, benchmark_members="on",
                    start_date=None):
     """
     Main update job function
@@ -1319,12 +1319,17 @@ if __name__ == "__main__":
     parser.add_argument("--variant-output-dir", type=str, default=None,
                         help=("Optional override for models output directory — used by "
                               "the B1 variant harness to avoid clobbering production artifacts."))
-    parser.add_argument("--benchmark-members", type=str, default="off",
+    parser.add_argument("--benchmark-members", type=str, default="on",
                         choices=("on", "off"),
-                        help=("C1 benchmark ensemble members. 'on' adds Hamilton "
-                              "JHGDPBRINDX, Chauvet-Piger RECPROUSM156N, and a "
-                              "Wright probit as ensemble members; 'off' (default) "
-                              "preserves current production behavior."))
+                        help=("Benchmark (peer-model) ensemble members. 'on' "
+                              "(default) adds Hamilton JHGDPBRINDX, Chauvet-"
+                              "Piger RECPROUSM156N, and a Wright probit as "
+                              "ensemble members alongside the supervised and "
+                              "Markov base learners. 'off' restores the pre-C1 "
+                              "behavior. The default was flipped to 'on' "
+                              "after the Markov-switching rewrite (Filardo-style "
+                              "2-regime AR(4) on INDPRO) made the bake-off "
+                              "comparison from the original C1 gate stale."))
 
     args = parser.parse_args()
 
