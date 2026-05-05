@@ -1,31 +1,31 @@
 {
-  "timestamp": "2026-05-03T06:08:19.440314",
+  "timestamp": "2026-05-05T12:49:48.410390",
   "checks": {
     "prediction_stability": {
       "status": "OK",
       "details": {
-        "current_6m_vol": 0.0105,
-        "historical_mean_vol": 0.0606,
-        "historical_max_vol": 0.3485,
-        "last_mom_change": 0.0
+        "current_6m_vol": 0.0189,
+        "historical_mean_vol": 0.0608,
+        "historical_max_vol": 0.3527,
+        "last_mom_change": 0.0071
       }
     },
     "model_disagreement": {
       "status": "WARNING",
       "details": {
-        "current_spread": 0.5262,
-        "current_std": 0.2261,
+        "current_spread": 0.5329,
+        "current_std": 0.2204,
         "model_predictions": {
           "Probit": 0.275,
-          "RandomForest": 0.5762,
-          "XGBoost": 0.53,
-          "MarkovSwitching": 0.5,
+          "RandomForest": 0.5829,
+          "XGBoost": 0.5449,
+          "MarkovSwitching": 0.3908,
           "HamiltonBenchmark": 0.05,
           "ChauvetPigerBenchmark": 0.05,
-          "WrightProbit": 0.4722
+          "WrightProbit": 0.465
         },
-        "mean_historical_spread": 0.1484,
-        "p95_historical_spread": 0.3061
+        "mean_historical_spread": 0.1502,
+        "p95_historical_spread": 0.3257
       }
     },
     "feature_drift": {
@@ -38,7 +38,7 @@
         "features_critical": 0,
         "features_skipped_binary": 15,
         "features_failed": 0,
-        "mean_psi": 5.8035,
+        "mean_psi": 5.8025,
         "max_psi": 9.4225,
         "thresholds": {
           "info": 0.25,
@@ -58,9 +58,9 @@
       "status": "WARNING",
       "details": {
         "window_months": 24,
-        "mean_predicted": 0.607,
+        "mean_predicted": 0.6118,
         "observed_rate": 0.0,
-        "calibration_gap": 0.607,
+        "calibration_gap": 0.6118,
         "observed_months": 6
       }
     },
@@ -68,13 +68,13 @@
       "status": "WARNING",
       "details": {
         "window_months": 60,
-        "ece": 0.4654,
-        "calibration_slope": 0.1074,
-        "calibration_intercept": -2.6452,
-        "brier_reliability": 0.33027,
-        "brier_resolution": 0.01222,
+        "ece": 0.4828,
+        "calibration_slope": 0.1076,
+        "calibration_intercept": -2.6465,
+        "brier_reliability": 0.34013,
+        "brier_resolution": 0.01444,
         "brier_uncertainty": 0.06222,
-        "brier_total": 0.38027,
+        "brier_total": 0.38791,
         "ece_threshold": 0.1
       }
     },
@@ -82,7 +82,7 @@
       "status": "OK",
       "details": {
         "latest_date": "2026-05-31",
-        "days_old": -28
+        "days_old": -26
       }
     }
   },
@@ -90,7 +90,7 @@
     {
       "level": "WARNING",
       "check": "model_disagreement",
-      "message": "High model disagreement: spread=52.6%. Models: Probit=27.5%, RandomForest=57.6%, XGBoost=53.0%, MarkovSwitching=50.0%, HamiltonBenchmark=5.0%, ChauvetPigerBenchmark=5.0%, WrightProbit=47.2%"
+      "message": "High model disagreement: spread=53.3%. Models: Probit=27.5%, RandomForest=58.3%, XGBoost=54.5%, MarkovSwitching=39.1%, HamiltonBenchmark=5.0%, ChauvetPigerBenchmark=5.0%, WrightProbit=46.5%"
     },
     {
       "level": "WARNING",
@@ -100,12 +100,12 @@
     {
       "level": "INFO",
       "check": "calibration",
-      "message": "Calibration gap: predicted mean=60.7%, observed rate=0.0% over last 24 months"
+      "message": "Calibration gap: predicted mean=61.2%, observed rate=0.0% over last 24 months"
     },
     {
       "level": "WARNING",
       "check": "calibration_quality",
-      "message": "ECE=0.465 over last 60 months exceeds threshold 0.10"
+      "message": "ECE=0.483 over last 60 months exceeds threshold 0.10"
     },
     {
       "level": "INFO",

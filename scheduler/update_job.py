@@ -788,6 +788,9 @@ def _persist_model_bundle(*, bundle: dict, models_dir: Path, horizon_months: int
                 'preferred_ensemble_calibrator': getattr(
                     model, "preferred_ensemble_calibrator", "sigmoid"
                 ),
+                'force_preferred_ensemble_calibrator': bool(getattr(
+                    model, "force_preferred_ensemble_calibrator", False
+                )),
             }, f, indent=2, default=str)
         logger.info(
             "✓ Saved calibration diagnostics (%d model(s), A/B winners: %s, "
@@ -814,7 +817,8 @@ def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
                    threshold_override=None, strict_vintage_search=False,
                    search_only=False, feature_variant="hybrid",
                    variant_output_dir=None, benchmark_members="on",
-                   start_date=None):
+                   start_date=None, preferred_ensemble_calibrator=None,
+                   force_preferred_calibrator=False):
     """
     Main update job function
 
@@ -1003,6 +1007,10 @@ def run_update_job(horizon_months=None, train_end_date=None, max_features=None,
         benchmark_enabled = str(benchmark_members).lower() == "on"
         if benchmark_enabled:
             selected_model_config['benchmark_members_enabled'] = True
+        if preferred_ensemble_calibrator:
+            selected_model_config['preferred_ensemble_calibrator'] = preferred_ensemble_calibrator
+        if force_preferred_calibrator:
+            selected_model_config['force_preferred_ensemble_calibrator'] = True
         selected_n_cv_splits = 5
         selected_max_features = max_features
 
@@ -1330,6 +1338,17 @@ if __name__ == "__main__":
                               "after the Markov-switching rewrite (Filardo-style "
                               "2-regime AR(4) on INDPRO) made the bake-off "
                               "comparison from the original C1 gate stale."))
+    parser.add_argument("--preferred-ensemble-calibrator", type=str, default=None,
+                        choices=("isotonic", "sigmoid", "beta"),
+                        help=("Override the preferred ensemble-level calibrator "
+                              "(default: sigmoid). Only takes effect for the "
+                              "current run."))
+    parser.add_argument("--force-preferred-calibrator", action="store_true",
+                        help=("Disable the A/B-winner override at the ensemble "
+                              "calibrator layer; deploy the preferred calibrator "
+                              "regardless of holdout ECE. Used for the 18M "
+                              "horizon to keep sigmoid (responsive) over isotonic "
+                              "(better ECE but flat)."))
 
     args = parser.parse_args()
 
@@ -1343,6 +1362,8 @@ if __name__ == "__main__":
         feature_variant=args.feature_variant,
         variant_output_dir=args.variant_output_dir,
         benchmark_members=args.benchmark_members,
+        preferred_ensemble_calibrator=args.preferred_ensemble_calibrator,
+        force_preferred_calibrator=args.force_preferred_calibrator,
     )
 
     sys.exit(0 if success else 1)

@@ -1,7 +1,7 @@
 {
-  "timestamp_utc": "2026-05-03T05:56:07.664337Z",
+  "timestamp_utc": "2026-05-05T16:44:21.573342Z",
   "git_sha": "714b4400e507c3a4808562ef659b6e93ed54ce9b",
-  "python_version": "3.11.15",
+  "python_version": "3.13.3",
   "horizon_months": 6,
   "train_end_date": null,
   "max_features": 50,
@@ -25,24 +25,24 @@
     "chauvet_piger_benchmark": 0.3333333333333333
   },
   "ensemble_metrics": {
-    "auc": 0.7282366071428572,
-    "pr_auc": 0.19455453361228436,
-    "brier": 0.051061556458940886,
-    "logloss": 0.2797200252402882
+    "auc": 0.6986607142857143,
+    "pr_auc": 0.17780699543617476,
+    "brier": 0.051787835637793905,
+    "logloss": 0.3340641453649535
   },
   "predictions_rows": 141,
   "latest_prediction_date": "2026-05-31",
   "latest_known_outcome_date": "2025-11-30",
   "threshold_diagnostics": {
     "winner_threshold": 0.1,
-    "winner_f1": 0.947826,
-    "threshold_plateau_width_01": 4,
-    "threshold_plateau_width_005": 2,
+    "winner_f1": 0.933333,
+    "threshold_plateau_width_01": 5,
+    "threshold_plateau_width_005": 3,
     "threshold_plateau_range": [
       0.1,
-      0.13
+      0.15
     ],
-    "threshold_plateau_span_01": 0.03,
+    "threshold_plateau_span_01": 0.05,
     "is_flat_plateau_warning": false
   }
 }

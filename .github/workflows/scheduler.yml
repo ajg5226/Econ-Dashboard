@@ -36,7 +36,7 @@ jobs:
       - name: Run update job (18M secondary horizon)
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
-        run: python -m scheduler.update_job --horizon 18 --variant-output-dir data/models/horizon_18m/
+        run: python -m scheduler.update_job --horizon 18 --variant-output-dir data/models/horizon_18m/ --force-preferred-calibrator
 
       - name: Append 18M secondary signal to executive report
         run: python scripts/append_18m_secondary_signal.py

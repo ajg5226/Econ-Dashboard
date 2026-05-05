@@ -844,6 +844,14 @@ class RecessionEnsembleModel:
             (self.model_config.get("preferred_ensemble_calibrator")
              or "sigmoid")
         ).lower()
+        # When True, deploy `preferred_ensemble_calibrator` and skip the
+        # A/B-winner override. Used for the 18M horizon, where isotonic wins
+        # the A/B on holdout ECE but compresses the time series into flat
+        # piecewise-constant steps; forcing sigmoid trades ~1pp ECE for a
+        # responsive signal. See plans/we-want-to-improve-pure-salamander.md.
+        self.force_preferred_ensemble_calibrator = bool(
+            self.model_config.get("force_preferred_ensemble_calibrator", False)
+        )
         self.feature_cols = []
         self.feature_importance = {}
         self.metrics = {}
@@ -2195,7 +2203,16 @@ class RecessionEnsembleModel:
                 # Stick with preferred unless another calibrator beats it by >10%
                 # on holdout ECE. Guards against A/B flip-flop between runs.
                 deployed = preferred
-                if (
+                if self.force_preferred_ensemble_calibrator:
+                    logger.info(
+                        "  ensemble calibrator override disabled (force_preferred=True); "
+                        "deploying preferred=%s regardless of A/B winner=%s "
+                        "(winner_ece=%s, preferred_ece=%s).",
+                        preferred, ab_winner,
+                        f"{winner_ece:.4f}" if winner_ece is not None else "n/a",
+                        f"{preferred_ece:.4f}" if preferred_ece is not None else "n/a",
+                    )
+                elif (
                     winner_ece is not None
                     and preferred_ece is not None
                     and preferred_ece > 0
