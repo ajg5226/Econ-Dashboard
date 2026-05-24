@@ -1,31 +1,31 @@
 {
-  "timestamp": "2026-05-17T06:24:31.054286",
+  "timestamp": "2026-05-24T06:41:24.856654",
   "checks": {
     "prediction_stability": {
       "status": "OK",
       "details": {
-        "current_6m_vol": 0.0022,
-        "historical_mean_vol": 0.0354,
-        "historical_max_vol": 0.479,
-        "last_mom_change": 0.0004
+        "current_6m_vol": 0.0023,
+        "historical_mean_vol": 0.0362,
+        "historical_max_vol": 0.4794,
+        "last_mom_change": 0.0007
       }
     },
     "model_disagreement": {
       "status": "WARNING",
       "details": {
         "current_spread": 0.45,
-        "current_std": 0.1865,
+        "current_std": 0.1853,
         "model_predictions": {
           "Probit": 0.0737,
-          "RandomForest": 0.1064,
+          "RandomForest": 0.125,
           "XGBoost": 0.2175,
           "MarkovSwitching": 0.5,
           "HamiltonBenchmark": 0.05,
           "ChauvetPigerBenchmark": 0.05,
-          "WrightProbit": 0.4208
+          "WrightProbit": 0.422
         },
-        "mean_historical_spread": 0.1786,
-        "p95_historical_spread": 0.5975
+        "mean_historical_spread": 0.1814,
+        "p95_historical_spread": 0.6166
       }
     },
     "feature_drift": {
@@ -38,7 +38,7 @@
         "features_critical": 0,
         "features_skipped_binary": 11,
         "features_failed": 0,
-        "mean_psi": 6.0929,
+        "mean_psi": 6.1327,
         "max_psi": 9.2627,
         "thresholds": {
           "info": 0.25,
@@ -58,9 +58,9 @@
       "status": "OK",
       "details": {
         "window_months": 24,
-        "mean_predicted": 0.0292,
+        "mean_predicted": 0.0304,
         "observed_rate": 0.0,
-        "calibration_gap": 0.0292,
+        "calibration_gap": 0.0304,
         "observed_months": 18
       }
     },
@@ -74,7 +74,7 @@
       "status": "OK",
       "details": {
         "latest_date": "2026-05-31",
-        "days_old": -14
+        "days_old": -7
       }
     }
   },
@@ -82,12 +82,12 @@
     {
       "level": "WARNING",
       "check": "model_disagreement",
-      "message": "High model disagreement: spread=45.0%. Models: Probit=7.4%, RandomForest=10.6%, XGBoost=21.8%, MarkovSwitching=50.0%, HamiltonBenchmark=5.0%, ChauvetPigerBenchmark=5.0%, WrightProbit=42.1%"
+      "message": "High model disagreement: spread=45.0%. Models: Probit=7.4%, RandomForest=12.5%, XGBoost=21.8%, MarkovSwitching=50.0%, HamiltonBenchmark=5.0%, ChauvetPigerBenchmark=5.0%, WrightProbit=42.2%"
     },
     {
       "level": "WARNING",
       "check": "feature_drift",
-      "message": "38 features drifted (0 CRITICAL \u226510.0, 27 WARNING \u22655.0, 11 INFO \u22650.25). Top: NFCI_Z=8.30, leading_PRFI_3M=8.46, financial_NFCI_MA3=7.60"
+      "message": "38 features drifted (0 CRITICAL \u226510.0, 27 WARNING \u22655.0, 11 INFO \u22650.25). Top: NFCI_Z=8.10, leading_PRFI_3M=8.46, financial_NFCI_MA3=7.60"
     }
   ],
   "alert_count": 2,
