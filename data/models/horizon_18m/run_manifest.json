@@ -1,6 +1,6 @@
 {
-  "timestamp_utc": "2026-05-31T07:03:16.227070Z",
-  "git_sha": "24935741e7b978b1e1f922d17e19c433b68f1345",
+  "timestamp_utc": "2026-06-07T07:10:03.562312Z",
+  "git_sha": "71d8ab3cb3e25a5487a369c7e77c47bfa8398a72",
   "python_version": "3.11.15",
   "horizon_months": 18,
   "train_end_date": null,
@@ -11,7 +11,7 @@
     "force_preferred_ensemble_calibrator": true
   },
   "threshold_override": null,
-  "decision_threshold_used": 0.53,
+  "decision_threshold_used": 0.43,
   "threshold_method": "calibrated training F1 with precision/recall tie-breaks",
   "ensemble_method": "equal_weight_active",
   "active_models": [
@@ -26,24 +26,24 @@
     "xgboost": 0.3333333333333333
   },
   "ensemble_metrics": {
-    "auc": 0.712156497438286,
-    "pr_auc": 0.21896987102994253,
-    "brier": 0.23249849551489693,
-    "logloss": 0.6517198856960105
+    "auc": 0.7168141592920354,
+    "pr_auc": 0.21981186888941578,
+    "brier": 0.20833024626537677,
+    "logloss": 0.5736942003499639
   },
   "predictions_rows": 150,
-  "latest_prediction_date": "2026-05-31",
-  "latest_known_outcome_date": "2024-11-30",
+  "latest_prediction_date": "2026-06-30",
+  "latest_known_outcome_date": "2024-12-31",
   "threshold_diagnostics": {
-    "winner_threshold": 0.53,
-    "winner_f1": 0.972678,
-    "threshold_plateau_width_01": 13,
-    "threshold_plateau_width_005": 10,
+    "winner_threshold": 0.43,
+    "winner_f1": 0.960674,
+    "threshold_plateau_width_01": 10,
+    "threshold_plateau_width_005": 9,
     "threshold_plateau_range": [
-      0.48,
-      0.6
+      0.38,
+      0.47
     ],
-    "threshold_plateau_span_01": 0.12,
+    "threshold_plateau_span_01": 0.09,
     "is_flat_plateau_warning": true
   }
 }

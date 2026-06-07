@@ -1,6 +1,5 @@
 {
-  "probit": 0.25,
-  "random_forest": 0.25,
-  "xgboost": 0.25,
-  "chauvet_piger_benchmark": 0.25
+  "probit": 0.3333333333333333,
+  "random_forest": 0.3333333333333333,
+  "chauvet_piger_benchmark": 0.3333333333333333
 }

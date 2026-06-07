@@ -5,8 +5,8 @@
   "method_key": "stationary_block_bootstrap",
   "block_size_months": 12,
   "empirical_coverage_on_backtest": null,
-  "latest_ci_lower": 0.10606943105542925,
-  "latest_ci_upper": 0.7249111735433493,
-  "latest_model_spread": 0.10405570795171903,
-  "timestamp": "2026-05-31T07:03:16.229394"
+  "latest_ci_lower": 0.24140583922363187,
+  "latest_ci_upper": 0.704649553009906,
+  "latest_model_spread": 0.2299353601075283,
+  "timestamp": "2026-06-07T07:10:03.564917"
 }

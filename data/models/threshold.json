@@ -1,12 +1,11 @@
 {
-  "decision_threshold": 0.15,
+  "decision_threshold": 0.11,
   "method": "calibrated training F1 with precision/recall tie-breaks",
   "ensemble_method": "equal_weight_active",
   "active_models": [
     "probit",
     "random_forest",
-    "xgboost",
     "chauvet_piger_benchmark"
   ],
-  "timestamp": "2026-05-31T06:57:08.816974"
+  "timestamp": "2026-06-07T07:04:08.332323"
 }

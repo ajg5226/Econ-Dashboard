@@ -1,6 +1,6 @@
 {
-  "timestamp_utc": "2026-05-31T06:57:08.833483Z",
-  "git_sha": "24935741e7b978b1e1f922d17e19c433b68f1345",
+  "timestamp_utc": "2026-06-07T07:04:08.349192Z",
+  "git_sha": "71d8ab3cb3e25a5487a369c7e77c47bfa8398a72",
   "python_version": "3.11.15",
   "horizon_months": 6,
   "train_end_date": null,
@@ -10,41 +10,39 @@
     "benchmark_members_enabled": true
   },
   "threshold_override": null,
-  "decision_threshold_used": 0.15,
+  "decision_threshold_used": 0.11,
   "threshold_method": "calibrated training F1 with precision/recall tie-breaks",
   "ensemble_method": "equal_weight_active",
   "active_models": [
     "probit",
     "random_forest",
-    "xgboost",
     "chauvet_piger_benchmark"
   ],
   "selected_features_count": 50,
   "ensemble_weights": {
-    "probit": 0.25,
-    "random_forest": 0.25,
-    "xgboost": 0.25,
-    "chauvet_piger_benchmark": 0.25
+    "probit": 0.3333333333333333,
+    "random_forest": 0.3333333333333333,
+    "chauvet_piger_benchmark": 0.3333333333333333
   },
   "ensemble_metrics": {
-    "auc": 0.7952008928571428,
-    "pr_auc": 0.1766917293233083,
-    "brier": 0.054352689809981675,
-    "logloss": 0.22810487091435785
+    "auc": 0.7360491071428572,
+    "pr_auc": 0.18664899480942826,
+    "brier": 0.05154567739554986,
+    "logloss": 0.2687290024899178
   },
   "predictions_rows": 141,
-  "latest_prediction_date": "2026-05-31",
-  "latest_known_outcome_date": "2025-11-30",
+  "latest_prediction_date": "2026-06-30",
+  "latest_known_outcome_date": "2025-12-31",
   "threshold_diagnostics": {
-    "winner_threshold": 0.15,
-    "winner_f1": 0.943231,
-    "threshold_plateau_width_01": 19,
-    "threshold_plateau_width_005": 19,
+    "winner_threshold": 0.11,
+    "winner_f1": 0.942222,
+    "threshold_plateau_width_01": 3,
+    "threshold_plateau_width_005": 3,
     "threshold_plateau_range": [
-      0.15,
-      0.33
+      0.1,
+      0.12
     ],
-    "threshold_plateau_span_01": 0.18,
-    "is_flat_plateau_warning": true
+    "threshold_plateau_span_01": 0.02,
+    "is_flat_plateau_warning": false
   }
 }
