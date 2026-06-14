@@ -1,31 +1,31 @@
 {
-  "timestamp": "2026-06-07T07:15:09.849390",
+  "timestamp": "2026-06-14T07:31:41.663409",
   "checks": {
     "prediction_stability": {
       "status": "OK",
       "details": {
-        "current_6m_vol": 0.0586,
-        "historical_mean_vol": 0.0564,
-        "historical_max_vol": 0.3286,
-        "last_mom_change": 0.0003
+        "current_6m_vol": 0.044,
+        "historical_mean_vol": 0.0549,
+        "historical_max_vol": 0.3318,
+        "last_mom_change": 0.0203
       }
     },
     "model_disagreement": {
       "status": "WARNING",
       "details": {
         "current_spread": 0.5231,
-        "current_std": 0.2132,
+        "current_std": 0.2206,
         "model_predictions": {
-          "Probit": 0.3029,
+          "Probit": 0.3155,
           "RandomForest": 0.5731,
-          "XGBoost": 0.4333,
+          "XGBoost": 0.5027,
           "MarkovSwitching": 0.5,
           "HamiltonBenchmark": 0.05,
           "ChauvetPigerBenchmark": 0.05,
-          "WrightProbit": 0.4609
+          "WrightProbit": 0.4735
         },
-        "mean_historical_spread": 0.1416,
-        "p95_historical_spread": 0.3096
+        "mean_historical_spread": 0.1373,
+        "p95_historical_spread": 0.3024
       }
     },
     "feature_drift": {
@@ -33,12 +33,12 @@
       "details": {
         "features_checked": 36,
         "features_drifted": 31,
-        "features_info": 7,
-        "features_warning": 24,
+        "features_info": 8,
+        "features_warning": 23,
         "features_critical": 0,
         "features_skipped_binary": 14,
         "features_failed": 0,
-        "mean_psi": 5.6517,
+        "mean_psi": 5.6251,
         "max_psi": 9.7778,
         "thresholds": {
           "info": 0.25,
@@ -58,9 +58,9 @@
       "status": "WARNING",
       "details": {
         "window_months": 24,
-        "mean_predicted": 0.5234,
+        "mean_predicted": 0.5236,
         "observed_rate": 0.0,
-        "calibration_gap": 0.5234,
+        "calibration_gap": 0.5236,
         "observed_months": 6
       }
     },
@@ -68,13 +68,13 @@
       "status": "WARNING",
       "details": {
         "window_months": 60,
-        "ece": 0.438,
-        "calibration_slope": 0.1449,
-        "calibration_intercept": -2.9076,
-        "brier_reliability": 0.3058,
+        "ece": 0.4264,
+        "calibration_slope": 0.1724,
+        "calibration_intercept": -2.9103,
+        "brier_reliability": 0.30653,
         "brier_resolution": 0.00583,
         "brier_uncertainty": 0.0475,
-        "brier_total": 0.34746,
+        "brier_total": 0.3482,
         "ece_threshold": 0.1
       }
     },
@@ -82,7 +82,7 @@
       "status": "OK",
       "details": {
         "latest_date": "2026-06-30",
-        "days_old": -23
+        "days_old": -16
       }
     }
   },
@@ -90,27 +90,27 @@
     {
       "level": "WARNING",
       "check": "model_disagreement",
-      "message": "High model disagreement: spread=52.3%. Models: Probit=30.3%, RandomForest=57.3%, XGBoost=43.3%, MarkovSwitching=50.0%, HamiltonBenchmark=5.0%, ChauvetPigerBenchmark=5.0%, WrightProbit=46.1%"
+      "message": "High model disagreement: spread=52.3%. Models: Probit=31.6%, RandomForest=57.3%, XGBoost=50.3%, MarkovSwitching=50.0%, HamiltonBenchmark=5.0%, ChauvetPigerBenchmark=5.0%, WrightProbit=47.3%"
     },
     {
       "level": "WARNING",
       "check": "feature_drift",
-      "message": "31 features drifted (0 CRITICAL \u226510.0, 24 WARNING \u22655.0, 7 INFO \u22650.25). Top: RESIDENTIAL_INV_Z=9.78, NFCI_Z=8.10, leading_T10Y3M_MA6=7.84"
+      "message": "31 features drifted (0 CRITICAL \u226510.0, 23 WARNING \u22655.0, 8 INFO \u22650.25). Top: RESIDENTIAL_INV_Z=9.78, NFCI_Z=7.21, leading_T10Y3M_MA6=7.84"
     },
     {
       "level": "INFO",
       "check": "calibration",
-      "message": "Calibration gap: predicted mean=52.3%, observed rate=0.0% over last 24 months"
+      "message": "Calibration gap: predicted mean=52.4%, observed rate=0.0% over last 24 months"
     },
     {
       "level": "WARNING",
       "check": "calibration_quality",
-      "message": "ECE=0.438 over last 60 months exceeds threshold 0.10"
+      "message": "ECE=0.426 over last 60 months exceeds threshold 0.10"
     },
     {
       "level": "INFO",
       "check": "calibration_quality",
-      "message": "Calibration slope=0.14 indicates overconfident probabilities"
+      "message": "Calibration slope=0.17 indicates overconfident probabilities"
     }
   ],
   "alert_count": 5,
