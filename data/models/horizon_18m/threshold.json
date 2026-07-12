@@ -1,5 +1,5 @@
 {
-  "decision_threshold": 0.45,
+  "decision_threshold": 0.44,
   "method": "calibrated training F1 with precision/recall tie-breaks",
   "ensemble_method": "equal_weight_active",
   "active_models": [
@@ -7,5 +7,5 @@
     "random_forest",
     "xgboost"
   ],
-  "timestamp": "2026-07-05T06:44:13.583813"
+  "timestamp": "2026-07-12T05:59:50.989530"
 }

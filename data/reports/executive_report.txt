@@ -1,6 +1,6 @@
 ================================================================================
 RECESSION PREDICTION ENGINE — EXECUTIVE REPORT
-Report Generated: 2026-07-05 06:37:56
+Report Generated: 2026-07-12 05:53:38
 ================================================================================
 
 RECESSION PROBABILITY — 6 MONTHS FORWARD
@@ -47,14 +47,14 @@ METHODOLOGY:
 SECONDARY SIGNAL — 18 MONTHS FORWARD (A3 horizon)
 ================================================================================
 As of: 2026-07-31
-Ensemble probability (18M forward): 39.4%
-Decision threshold (18M):          45.0%
-Gap vs threshold:                  -5.6pp
+Ensemble probability (18M forward): 34.4%
+Decision threshold (18M):          44.0%
+Gap vs threshold:                  -9.6pp
 Signal:                            CALM (below 18M threshold)
 
 Active models: probit, random_forest, xgboost
 Weights:       probit=0.33, random_forest=0.33, xgboost=0.33
-Training CV:   AUC 0.718, PR-AUC 0.219
+Training CV:   AUC 0.717, PR-AUC 0.218
 
 The 18M horizon is a secondary signal added post-A3. It asks:
 "Is a recession likely to start within the next 18 months?"
@@ -63,5 +63,5 @@ predictions surface stronger peaks for Dot-com / S&L / GFC
 than 6M does — useful for early-stage monitoring. The 6M
 signal above remains the primary, more time-specific forecast.
 
-Model artifacts: data/models/horizon_18m/ (git SHA a5fa82f2)
+Model artifacts: data/models/horizon_18m/ (git SHA 324ec2c8)
 ================================================================================
