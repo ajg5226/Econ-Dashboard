@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-07-19T05:53:28.449967",
+  "timestamp": "2026-07-26T06:03:46.764090",
   "checks": {
     "prediction_stability": {
       "status": "OK",
@@ -14,7 +14,7 @@
       "status": "WARNING",
       "details": {
         "current_spread": 0.45,
-        "current_std": 0.1871,
+        "current_std": 0.1866,
         "model_predictions": {
           "Probit": 0.0778,
           "RandomForest": 0.1333,
@@ -22,10 +22,10 @@
           "MarkovSwitching": 0.5,
           "HamiltonBenchmark": 0.05,
           "ChauvetPigerBenchmark": 0.05,
-          "WrightProbit": 0.4367
+          "WrightProbit": 0.4343
         },
-        "mean_historical_spread": 0.1787,
-        "p95_historical_spread": 0.6243
+        "mean_historical_spread": 0.1786,
+        "p95_historical_spread": 0.6246
       }
     },
     "feature_drift": {
@@ -38,7 +38,7 @@
         "features_critical": 1,
         "features_skipped_binary": 11,
         "features_failed": 0,
-        "mean_psi": 5.6768,
+        "mean_psi": 5.6539,
         "max_psi": 10.0298,
         "thresholds": {
           "info": 0.25,
@@ -49,8 +49,8 @@
           "leading_T10Y3M_inv_duration": 10.03,
           "leading_PRFI_3M": 8.983,
           "leading_PNFI_MoM": 8.663,
-          "financial_NFCI": 8.457,
-          "FFR_x_SPREAD": 8.104
+          "FFR_x_SPREAD": 8.104,
+          "leading_T10Y3M": 7.875
         },
         "top_critical": {
           "leading_T10Y3M_inv_duration": 10.03
@@ -77,7 +77,7 @@
       "status": "OK",
       "details": {
         "latest_date": "2026-07-31",
-        "days_old": -12
+        "days_old": -5
       }
     }
   },
@@ -85,7 +85,7 @@
     {
       "level": "WARNING",
       "check": "model_disagreement",
-      "message": "High model disagreement: spread=45.0%. Models: Probit=7.8%, RandomForest=13.3%, XGBoost=21.4%, MarkovSwitching=50.0%, HamiltonBenchmark=5.0%, ChauvetPigerBenchmark=5.0%, WrightProbit=43.7%"
+      "message": "High model disagreement: spread=45.0%. Models: Probit=7.8%, RandomForest=13.3%, XGBoost=21.4%, MarkovSwitching=50.0%, HamiltonBenchmark=5.0%, ChauvetPigerBenchmark=5.0%, WrightProbit=43.4%"
     },
     {
       "level": "CRITICAL",

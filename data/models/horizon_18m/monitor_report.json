@@ -1,31 +1,31 @@
 {
-  "timestamp": "2026-07-19T05:59:32.058171",
+  "timestamp": "2026-07-26T06:10:07.641805",
   "checks": {
     "prediction_stability": {
       "status": "OK",
       "details": {
-        "current_6m_vol": 0.0198,
-        "historical_mean_vol": 0.0541,
-        "historical_max_vol": 0.3337,
-        "last_mom_change": 0.0032
+        "current_6m_vol": 0.0193,
+        "historical_mean_vol": 0.0546,
+        "historical_max_vol": 0.3286,
+        "last_mom_change": 0.0181
       }
     },
     "model_disagreement": {
       "status": "WARNING",
       "details": {
-        "current_spread": 0.5197,
-        "current_std": 0.2264,
+        "current_spread": 0.5231,
+        "current_std": 0.2243,
         "model_predictions": {
-          "Probit": 0.309,
-          "RandomForest": 0.5697,
-          "XGBoost": 0.55,
+          "Probit": 0.3039,
+          "RandomForest": 0.5731,
+          "XGBoost": 0.5333,
           "MarkovSwitching": 0.5,
           "HamiltonBenchmark": 0.05,
           "ChauvetPigerBenchmark": 0.05,
-          "WrightProbit": 0.4742
+          "WrightProbit": 0.4688
         },
-        "mean_historical_spread": 0.1361,
-        "p95_historical_spread": 0.2825
+        "mean_historical_spread": 0.1418,
+        "p95_historical_spread": 0.2937
       }
     },
     "feature_drift": {
@@ -38,7 +38,7 @@
         "features_critical": 2,
         "features_skipped_binary": 14,
         "features_failed": 0,
-        "mean_psi": 5.3284,
+        "mean_psi": 5.3403,
         "max_psi": 10.1189,
         "thresholds": {
           "info": 0.25,
@@ -50,7 +50,7 @@
           "leading_T10Y3M_inv_duration": 10.03,
           "leading_PRFI_3M": 8.983,
           "RES_VS_NONRES_SPREAD": 8.815,
-          "financial_NFCI": 8.457
+          "financial_ANFCI_MA6": 8.405
         },
         "top_critical": {
           "coincident_PAYEMS": 10.119,
@@ -62,9 +62,9 @@
       "status": "WARNING",
       "details": {
         "window_months": 24,
-        "mean_predicted": 0.5136,
+        "mean_predicted": 0.5165,
         "observed_rate": 0.0,
-        "calibration_gap": 0.5136,
+        "calibration_gap": 0.5165,
         "observed_months": 6
       }
     },
@@ -72,13 +72,13 @@
       "status": "WARNING",
       "details": {
         "window_months": 60,
-        "ece": 0.4416,
-        "calibration_slope": 0.3359,
-        "calibration_intercept": -3.4236,
-        "brier_reliability": 0.31041,
+        "ece": 0.4405,
+        "calibration_slope": 0.32,
+        "calibration_intercept": -3.4096,
+        "brier_reliability": 0.30929,
         "brier_resolution": 0.00444,
         "brier_uncertainty": 0.03222,
-        "brier_total": 0.33819,
+        "brier_total": 0.33706,
         "ece_threshold": 0.1
       }
     },
@@ -86,7 +86,7 @@
       "status": "OK",
       "details": {
         "latest_date": "2026-07-31",
-        "days_old": -12
+        "days_old": -5
       }
     }
   },
@@ -94,7 +94,7 @@
     {
       "level": "WARNING",
       "check": "model_disagreement",
-      "message": "High model disagreement: spread=52.0%. Models: Probit=30.9%, RandomForest=57.0%, XGBoost=55.0%, MarkovSwitching=50.0%, HamiltonBenchmark=5.0%, ChauvetPigerBenchmark=5.0%, WrightProbit=47.4%"
+      "message": "High model disagreement: spread=52.3%. Models: Probit=30.4%, RandomForest=57.3%, XGBoost=53.3%, MarkovSwitching=50.0%, HamiltonBenchmark=5.0%, ChauvetPigerBenchmark=5.0%, WrightProbit=46.9%"
     },
     {
       "level": "CRITICAL",
@@ -104,17 +104,17 @@
     {
       "level": "INFO",
       "check": "calibration",
-      "message": "Calibration gap: predicted mean=51.4%, observed rate=0.0% over last 24 months"
+      "message": "Calibration gap: predicted mean=51.7%, observed rate=0.0% over last 24 months"
     },
     {
       "level": "WARNING",
       "check": "calibration_quality",
-      "message": "ECE=0.442 over last 60 months exceeds threshold 0.10"
+      "message": "ECE=0.441 over last 60 months exceeds threshold 0.10"
     },
     {
       "level": "INFO",
       "check": "calibration_quality",
-      "message": "Calibration slope=0.34 indicates overconfident probabilities"
+      "message": "Calibration slope=0.32 indicates overconfident probabilities"
     }
   ],
   "alert_count": 5,
