@@ -1,22 +1,22 @@
 ================================================================================
 RECESSION PREDICTION ENGINE — EXECUTIVE REPORT
-Report Generated: 2026-08-02 05:59:04
+Report Generated: 2026-08-09 04:22:26
 ================================================================================
 
 RECESSION PROBABILITY — 18 MONTHS FORWARD
-As of: 2025-01-31
-Decision Threshold: 0.460 (optimized via calibrated training F1 with precision/recall tie-breaks)
+As of: 2025-02-28
+Decision Threshold: 0.420 (optimized via calibrated training F1 with precision/recall tie-breaks)
 --------------------------------------------------------------------------------
 
 MODEL PREDICTIONS:
-  PROBIT              :  31.3%  (weight: 0.333)
-  RANDOM_FOREST       :  53.0%  (weight: 0.333)
-  XGBOOST             :  46.2%  (weight: 0.333)
+  PROBIT              :  55.0%  (weight: 0.333)
+  RANDOM_FOREST       :  66.4%  (weight: 0.333)
+  XGBOOST             :  68.5%  (weight: 0.333)
   MARKOV_SWITCHING    :  50.0%  (diagnostic only)
-  ENSEMBLE            :  39.1%  (equal weight active)
+  ENSEMBLE            :  67.7%  (equal weight active)
 
 ================================================================================
-SIGNAL: ELEVATED RISK — Approaching recession threshold
+SIGNAL: HIGH RISK — Recession probability exceeds optimized threshold
 
 ================================================================================
 METHODOLOGY:
