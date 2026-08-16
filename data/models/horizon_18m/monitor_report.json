@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-08-09T04:27:58.133588",
+  "timestamp": "2026-08-16T03:56:53.312908",
   "checks": {
     "prediction_stability": {
       "status": "OK",
       "details": {
-        "current_6m_vol": 0.0012,
-        "historical_mean_vol": 0.0622,
-        "historical_max_vol": 0.342,
+        "current_6m_vol": 0.0164,
+        "historical_mean_vol": 0.0571,
+        "historical_max_vol": 0.3222,
         "last_mom_change": 0.0
       }
     },
@@ -14,31 +14,31 @@
       "status": "WARNING",
       "details": {
         "current_spread": 0.45,
-        "current_std": 0.1943,
+        "current_std": 0.19,
         "model_predictions": {
-          "Probit": 0.2957,
-          "RandomForest": 0.4343,
-          "XGBoost": 0.4429,
+          "Probit": 0.29,
+          "RandomForest": 0.4333,
+          "XGBoost": 0.4067,
           "MarkovSwitching": 0.5,
           "HamiltonBenchmark": 0.05,
           "ChauvetPigerBenchmark": 0.05,
-          "WrightProbit": 0.4603
+          "WrightProbit": 0.4531
         },
-        "mean_historical_spread": 0.1359,
-        "p95_historical_spread": 0.2572
+        "mean_historical_spread": 0.135,
+        "p95_historical_spread": 0.3267
       }
     },
     "feature_drift": {
       "status": "WARNING",
       "details": {
-        "features_checked": 36,
-        "features_drifted": 30,
-        "features_info": 9,
+        "features_checked": 35,
+        "features_drifted": 29,
+        "features_info": 8,
         "features_warning": 21,
         "features_critical": 0,
-        "features_skipped_binary": 14,
+        "features_skipped_binary": 15,
         "features_failed": 0,
-        "mean_psi": 5.1993,
+        "mean_psi": 5.1837,
         "max_psi": 9.3846,
         "thresholds": {
           "info": 0.25,
@@ -49,8 +49,8 @@
           "leading_T10Y3M_inv_duration": 9.385,
           "FFR_x_SPREAD": 9.067,
           "lagging_UEMPMEAN_MA3": 8.836,
-          "leading_T10Y3M": 8.815,
-          "coincident_PAYEMS": 8.608
+          "financial_ANFCI_MA6": 8.815,
+          "leading_T10Y3M": 8.815
         }
       }
     },
@@ -58,9 +58,9 @@
       "status": "WARNING",
       "details": {
         "window_months": 24,
-        "mean_predicted": 0.4874,
+        "mean_predicted": 0.4212,
         "observed_rate": 0.0,
-        "calibration_gap": 0.4874,
+        "calibration_gap": 0.4212,
         "observed_months": 6
       }
     },
@@ -68,13 +68,13 @@
       "status": "WARNING",
       "details": {
         "window_months": 60,
-        "ece": 0.4771,
-        "calibration_slope": 0.776,
-        "calibration_intercept": -4.7294,
-        "brier_reliability": 0.34558,
-        "brier_resolution": 0.00181,
+        "ece": 0.4598,
+        "calibration_slope": 1.1982,
+        "calibration_intercept": -5.1652,
+        "brier_reliability": 0.31277,
+        "brier_resolution": 0.0025,
         "brier_uncertainty": 0.01639,
-        "brier_total": 0.36016,
+        "brier_total": 0.32666,
         "ece_threshold": 0.1
       }
     },
@@ -82,7 +82,7 @@
       "status": "OK",
       "details": {
         "latest_date": "2026-08-31",
-        "days_old": -22
+        "days_old": -15
       }
     }
   },
@@ -90,22 +90,22 @@
     {
       "level": "WARNING",
       "check": "model_disagreement",
-      "message": "High model disagreement: spread=45.0%. Models: Probit=29.6%, RandomForest=43.4%, XGBoost=44.3%, MarkovSwitching=50.0%, HamiltonBenchmark=5.0%, ChauvetPigerBenchmark=5.0%, WrightProbit=46.0%"
+      "message": "High model disagreement: spread=45.0%. Models: Probit=29.0%, RandomForest=43.3%, XGBoost=40.7%, MarkovSwitching=50.0%, HamiltonBenchmark=5.0%, ChauvetPigerBenchmark=5.0%, WrightProbit=45.3%"
     },
     {
       "level": "WARNING",
       "check": "feature_drift",
-      "message": "30 features drifted (0 CRITICAL \u226510.0, 21 WARNING \u22655.0, 9 INFO \u22650.25). Top: NFCI_Z=7.06, leading_T10Y3M_MA6=8.46, lagging_UEMPMEAN_MA3=8.84"
+      "message": "29 features drifted (0 CRITICAL \u226510.0, 21 WARNING \u22655.0, 8 INFO \u22650.25). Top: NFCI_Z=6.93, leading_T10Y3M_MA6=8.46, lagging_UEMPMEAN_MA3=8.84"
     },
     {
       "level": "INFO",
       "check": "calibration",
-      "message": "Calibration gap: predicted mean=48.7%, observed rate=0.0% over last 24 months"
+      "message": "Calibration gap: predicted mean=42.1%, observed rate=0.0% over last 24 months"
     },
     {
       "level": "WARNING",
       "check": "calibration_quality",
-      "message": "ECE=0.477 over last 60 months exceeds threshold 0.10"
+      "message": "ECE=0.460 over last 60 months exceeds threshold 0.10"
     }
   ],
   "alert_count": 4,
