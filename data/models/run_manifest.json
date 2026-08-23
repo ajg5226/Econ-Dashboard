@@ -1,7 +1,7 @@
 {
-  "timestamp_utc": "2026-08-16T03:44:40.461685Z",
-  "git_sha": "4e23aee1d602c76a578b932e5d127a93ff0f62b9",
-  "python_version": "3.11.15",
+  "timestamp_utc": "2026-08-23T03:46:38.652540Z",
+  "git_sha": "92d76452222eb2a550dc7a289ffc70e7d9aebd21",
+  "python_version": "3.11.16",
   "horizon_months": 6,
   "train_end_date": null,
   "max_features": 50,
@@ -25,17 +25,17 @@
     "chauvet_piger_benchmark": 0.3333333333333333
   },
   "ensemble_metrics": {
-    "auc": 0.7449776785714286,
-    "pr_auc": 0.18287443182401164,
-    "brier": 0.05159354744367676,
-    "logloss": 0.26994335440488554
+    "auc": 0.7360491071428572,
+    "pr_auc": 0.1808607090634996,
+    "brier": 0.05174825194641147,
+    "logloss": 0.27662046547160846
   },
   "predictions_rows": 141,
   "latest_prediction_date": "2026-08-31",
   "latest_known_outcome_date": "2026-02-28",
   "threshold_diagnostics": {
     "winner_threshold": 0.1,
-    "winner_f1": 0.951965,
+    "winner_f1": 0.947368,
     "threshold_plateau_width_01": 1,
     "threshold_plateau_width_005": 1,
     "threshold_plateau_range": [
