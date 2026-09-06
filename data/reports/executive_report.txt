@@ -1,17 +1,17 @@
 ================================================================================
 RECESSION PREDICTION ENGINE — EXECUTIVE REPORT
-Report Generated: 2026-08-30 08:52:39
+Report Generated: 2026-09-06 07:32:57
 ================================================================================
 
 RECESSION PROBABILITY — 6 MONTHS FORWARD
-As of: 2026-02-28
+As of: 2026-03-31
 Decision Threshold: 0.100 (optimized via calibrated training F1 with precision/recall tie-breaks)
 --------------------------------------------------------------------------------
 
 MODEL PREDICTIONS:
-  PROBIT              :   6.0%  (weight: 0.333)
-  RANDOM_FOREST       :  15.4%  (weight: 0.333)
-  XGBOOST             :  20.5%  (diagnostic only)
+  PROBIT              :   3.6%  (weight: 0.333)
+  RANDOM_FOREST       :   6.7%  (weight: 0.333)
+  XGBOOST             :  11.7%  (diagnostic only)
   MARKOV_SWITCHING    :  50.0%  (diagnostic only)
   ENSEMBLE            :   0.0%  (equal weight active)
 
@@ -46,15 +46,15 @@ METHODOLOGY:
 ================================================================================
 SECONDARY SIGNAL — 18 MONTHS FORWARD (A3 horizon)
 ================================================================================
-As of: 2026-08-31
-Ensemble probability (18M forward): 34.8%
-Decision threshold (18M):          36.0%
-Gap vs threshold:                  -1.2pp
+As of: 2026-09-30
+Ensemble probability (18M forward): 27.5%
+Decision threshold (18M):          40.0%
+Gap vs threshold:                  -12.5pp
 Signal:                            CALM (below 18M threshold)
 
 Active models: probit, random_forest, xgboost
 Weights:       probit=0.33, random_forest=0.33, xgboost=0.33
-Training CV:   AUC 0.694, PR-AUC 0.213
+Training CV:   AUC 0.696, PR-AUC 0.208
 
 The 18M horizon is a secondary signal added post-A3. It asks:
 "Is a recession likely to start within the next 18 months?"
@@ -63,5 +63,5 @@ predictions surface stronger peaks for Dot-com / S&L / GFC
 than 6M does — useful for early-stage monitoring. The 6M
 signal above remains the primary, more time-specific forecast.
 
-Model artifacts: data/models/horizon_18m/ (git SHA 313eda8f)
+Model artifacts: data/models/horizon_18m/ (git SHA 4b545adc)
 ================================================================================
