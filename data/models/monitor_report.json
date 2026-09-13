@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-06T07:37:05.226490",
+  "timestamp": "2026-09-13T08:04:50.164089",
   "checks": {
     "prediction_stability": {
       "status": "OK",
@@ -14,7 +14,7 @@
       "status": "WARNING",
       "details": {
         "current_spread": 0.4636,
-        "current_std": 0.1969,
+        "current_std": 0.1966,
         "model_predictions": {
           "Probit": 0.0364,
           "RandomForest": 0.0667,
@@ -22,10 +22,10 @@
           "MarkovSwitching": 0.5,
           "HamiltonBenchmark": 0.05,
           "ChauvetPigerBenchmark": 0.05,
-          "WrightProbit": 0.4232
+          "WrightProbit": 0.4216
         },
-        "mean_historical_spread": 0.1807,
-        "p95_historical_spread": 0.6505
+        "mean_historical_spread": 0.1806,
+        "p95_historical_spread": 0.6504
       }
     },
     "feature_drift": {
@@ -33,12 +33,12 @@
       "details": {
         "features_checked": 38,
         "features_drifted": 36,
-        "features_info": 10,
-        "features_warning": 26,
+        "features_info": 11,
+        "features_warning": 25,
         "features_critical": 0,
         "features_skipped_binary": 12,
         "features_failed": 0,
-        "mean_psi": 5.3951,
+        "mean_psi": 5.3807,
         "max_psi": 8.8434,
         "thresholds": {
           "info": 0.25,
@@ -74,7 +74,7 @@
       "status": "OK",
       "details": {
         "latest_date": "2026-09-30",
-        "days_old": -24
+        "days_old": -17
       }
     }
   },
@@ -82,12 +82,12 @@
     {
       "level": "WARNING",
       "check": "model_disagreement",
-      "message": "High model disagreement: spread=46.4%. Models: Probit=3.6%, RandomForest=6.7%, XGBoost=11.7%, MarkovSwitching=50.0%, HamiltonBenchmark=5.0%, ChauvetPigerBenchmark=5.0%, WrightProbit=42.3%"
+      "message": "High model disagreement: spread=46.4%. Models: Probit=3.6%, RandomForest=6.7%, XGBoost=11.7%, MarkovSwitching=50.0%, HamiltonBenchmark=5.0%, ChauvetPigerBenchmark=5.0%, WrightProbit=42.2%"
     },
     {
       "level": "WARNING",
       "check": "feature_drift",
-      "message": "36 features drifted (0 CRITICAL \u226510.0, 26 WARNING \u22655.0, 10 INFO \u22650.25). Top: financial_NFCI=8.84, leading_PRFI_3M=5.70, leading_T10Y3M_MA6=7.85"
+      "message": "36 features drifted (0 CRITICAL \u226510.0, 25 WARNING \u22655.0, 11 INFO \u22650.25). Top: financial_NFCI=8.84, leading_PRFI_3M=5.70, leading_T10Y3M_MA6=7.85"
     }
   ],
   "alert_count": 2,

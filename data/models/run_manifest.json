@@ -1,6 +1,6 @@
 {
-  "timestamp_utc": "2026-09-06T07:32:57.164264Z",
-  "git_sha": "4b545adc05a48bd09b405c24afde6ac274fb8cb2",
+  "timestamp_utc": "2026-09-13T07:57:19.280357Z",
+  "git_sha": "0943a6687ea704ca03634212f383ff70e29cc86a",
   "python_version": "3.11.16",
   "horizon_months": 6,
   "train_end_date": null,
@@ -27,8 +27,8 @@
   "ensemble_metrics": {
     "auc": 0.7371651785714286,
     "pr_auc": 0.18753731008321545,
-    "brier": 0.05169001962130159,
-    "logloss": 0.30996778511012046
+    "brier": 0.05168908368159508,
+    "logloss": 0.3099677375628352
   },
   "predictions_rows": 141,
   "latest_prediction_date": "2026-09-30",
