@@ -1,6 +1,6 @@
 ================================================================================
 RECESSION PREDICTION ENGINE — EXECUTIVE REPORT
-Report Generated: 2026-09-13 07:57:19
+Report Generated: 2026-09-20 08:14:25
 ================================================================================
 
 RECESSION PROBABILITY — 6 MONTHS FORWARD
@@ -9,9 +9,9 @@ Decision Threshold: 0.100 (optimized via calibrated training F1 with precision/r
 --------------------------------------------------------------------------------
 
 MODEL PREDICTIONS:
-  PROBIT              :   3.6%  (weight: 0.333)
+  PROBIT              :   3.3%  (weight: 0.333)
   RANDOM_FOREST       :   6.7%  (weight: 0.333)
-  XGBOOST             :  11.7%  (diagnostic only)
+  XGBOOST             :  11.8%  (diagnostic only)
   MARKOV_SWITCHING    :  50.0%  (diagnostic only)
   ENSEMBLE            :   0.0%  (equal weight active)
 
@@ -47,9 +47,9 @@ METHODOLOGY:
 SECONDARY SIGNAL — 18 MONTHS FORWARD (A3 horizon)
 ================================================================================
 As of: 2026-09-30
-Ensemble probability (18M forward): 28.4%
-Decision threshold (18M):          39.0%
-Gap vs threshold:                  -10.6pp
+Ensemble probability (18M forward): 29.1%
+Decision threshold (18M):          42.0%
+Gap vs threshold:                  -12.9pp
 Signal:                            CALM (below 18M threshold)
 
 Active models: probit, random_forest, xgboost
@@ -63,5 +63,5 @@ predictions surface stronger peaks for Dot-com / S&L / GFC
 than 6M does — useful for early-stage monitoring. The 6M
 signal above remains the primary, more time-specific forecast.
 
-Model artifacts: data/models/horizon_18m/ (git SHA 0943a668)
+Model artifacts: data/models/horizon_18m/ (git SHA b7e2d5ed)
 ================================================================================
