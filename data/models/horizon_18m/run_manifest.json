@@ -1,6 +1,6 @@
 {
-  "timestamp_utc": "2026-09-20T08:20:58.695501Z",
-  "git_sha": "b7e2d5ed8e16aaf406f233ddc9a1851a3c5893b5",
+  "timestamp_utc": "2026-09-27T09:00:02.689626Z",
+  "git_sha": "cd6407607942e5ea7d8dbe83976727336f2e1333",
   "python_version": "3.11.16",
   "horizon_months": 18,
   "train_end_date": null,
@@ -27,9 +27,9 @@
   },
   "ensemble_metrics": {
     "auc": 0.693213296398892,
-    "pr_auc": 0.2079921968437036,
-    "brier": 0.21529416138422394,
-    "logloss": 0.5872494497762651
+    "pr_auc": 0.20901777165936272,
+    "brier": 0.21514432579858403,
+    "logloss": 0.5869297077015708
   },
   "predictions_rows": 151,
   "latest_prediction_date": "2026-09-30",
@@ -38,7 +38,7 @@
     "winner_threshold": 0.42,
     "winner_f1": 0.96338,
     "threshold_plateau_width_01": 7,
-    "threshold_plateau_width_005": 3,
+    "threshold_plateau_width_005": 4,
     "threshold_plateau_range": [
       0.39,
       0.45
