@@ -1,31 +1,31 @@
 {
-  "timestamp": "2026-10-11T09:46:32.248291",
+  "timestamp": "2026-10-18T07:54:30.373423",
   "checks": {
     "prediction_stability": {
       "status": "OK",
       "details": {
-        "current_6m_vol": 0.0151,
-        "historical_mean_vol": 0.0525,
-        "historical_max_vol": 0.2732,
-        "last_mom_change": 0.0007
+        "current_6m_vol": 0.0,
+        "historical_mean_vol": 0.0541,
+        "historical_max_vol": 0.3005,
+        "last_mom_change": 0.0
       }
     },
     "model_disagreement": {
       "status": "WARNING",
       "details": {
         "current_spread": 0.45,
-        "current_std": 0.1885,
+        "current_std": 0.1947,
         "model_predictions": {
-          "Probit": 0.3048,
-          "RandomForest": 0.4629,
-          "XGBoost": 0.3571,
+          "Probit": 0.3,
+          "RandomForest": 0.4386,
+          "XGBoost": 0.4333,
           "MarkovSwitching": 0.5,
           "HamiltonBenchmark": 0.05,
           "ChauvetPigerBenchmark": 0.05,
-          "WrightProbit": 0.4379
+          "WrightProbit": 0.4678
         },
-        "mean_historical_spread": 0.1577,
-        "p95_historical_spread": 0.313
+        "mean_historical_spread": 0.1506,
+        "p95_historical_spread": 0.3447
       }
     },
     "feature_drift": {
@@ -38,7 +38,7 @@
         "features_critical": 1,
         "features_skipped_binary": 14,
         "features_failed": 0,
-        "mean_psi": 5.998,
+        "mean_psi": 5.9113,
         "max_psi": 10.7899,
         "thresholds": {
           "info": 0.25,
@@ -50,7 +50,7 @@
           "coincident_PAYEMS": 9.649,
           "FFR_STANCE": 9.263,
           "leading_T10Y3M": 8.637,
-          "RES_VS_NONRES_SPREAD": 8.459
+          "financial_ANFCI_MA6": 8.516
         },
         "top_critical": {
           "monetary_DFF": 10.79
@@ -61,9 +61,9 @@
       "status": "WARNING",
       "details": {
         "window_months": 24,
-        "mean_predicted": 0.4383,
+        "mean_predicted": 0.3898,
         "observed_rate": 0.0,
-        "calibration_gap": 0.4383,
+        "calibration_gap": 0.3898,
         "observed_months": 6
       }
     },
@@ -77,7 +77,7 @@
       "status": "OK",
       "details": {
         "latest_date": "2026-10-31",
-        "days_old": -20
+        "days_old": -13
       }
     }
   },
@@ -85,7 +85,7 @@
     {
       "level": "WARNING",
       "check": "model_disagreement",
-      "message": "High model disagreement: spread=45.0%. Models: Probit=30.5%, RandomForest=46.3%, XGBoost=35.7%, MarkovSwitching=50.0%, HamiltonBenchmark=5.0%, ChauvetPigerBenchmark=5.0%, WrightProbit=43.8%"
+      "message": "High model disagreement: spread=45.0%. Models: Probit=30.0%, RandomForest=43.9%, XGBoost=43.3%, MarkovSwitching=50.0%, HamiltonBenchmark=5.0%, ChauvetPigerBenchmark=5.0%, WrightProbit=46.8%"
     },
     {
       "level": "CRITICAL",
@@ -95,7 +95,7 @@
     {
       "level": "INFO",
       "check": "calibration",
-      "message": "Calibration gap: predicted mean=43.8%, observed rate=0.0% over last 24 months"
+      "message": "Calibration gap: predicted mean=39.0%, observed rate=0.0% over last 24 months"
     }
   ],
   "alert_count": 3,
