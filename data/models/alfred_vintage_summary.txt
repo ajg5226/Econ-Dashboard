@@ -1,4 +1,4 @@
 ALFRED vintage checks: 5 date(s)
-Mean absolute revised-vintage gap: 18.19%
-Mean signed gap (revised - vintage): 15.52%
-Max absolute gap: 42.34%
+Mean absolute revised-vintage gap: 25.21%
+Mean signed gap (revised - vintage): 24.31%
+Max absolute gap: 65.86%
