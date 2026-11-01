@@ -1,44 +1,44 @@
 {
-  "timestamp": "2026-10-25T08:16:26.144262",
+  "timestamp": "2026-11-01T10:12:10.082447",
   "checks": {
     "prediction_stability": {
       "status": "OK",
       "details": {
-        "current_6m_vol": 0.0129,
-        "historical_mean_vol": 0.0538,
-        "historical_max_vol": 0.2938,
-        "last_mom_change": 0.025
+        "current_6m_vol": 0.0082,
+        "historical_mean_vol": 0.0514,
+        "historical_max_vol": 0.2951,
+        "last_mom_change": 0.0131
       }
     },
     "model_disagreement": {
       "status": "WARNING",
       "details": {
         "current_spread": 0.45,
-        "current_std": 0.1976,
+        "current_std": 0.1984,
         "model_predictions": {
           "Probit": 0.3,
-          "RandomForest": 0.4494,
-          "XGBoost": 0.44,
+          "RandomForest": 0.4716,
+          "XGBoost": 0.42,
           "MarkovSwitching": 0.5,
           "HamiltonBenchmark": 0.05,
           "ChauvetPigerBenchmark": 0.05,
           "WrightProbit": 0.4772
         },
         "mean_historical_spread": 0.1556,
-        "p95_historical_spread": 0.36
+        "p95_historical_spread": 0.3689
       }
     },
     "feature_drift": {
       "status": "WARNING",
       "details": {
         "features_checked": 36,
-        "features_drifted": 32,
+        "features_drifted": 31,
         "features_info": 6,
-        "features_warning": 25,
+        "features_warning": 24,
         "features_critical": 1,
         "features_skipped_binary": 14,
         "features_failed": 0,
-        "mean_psi": 5.9918,
+        "mean_psi": 5.8128,
         "max_psi": 10.7899,
         "thresholds": {
           "info": 0.25,
@@ -48,9 +48,9 @@
         "top_drifted": {
           "monetary_DFF": 10.79,
           "coincident_PAYEMS": 9.649,
-          "FFR_STANCE": 9.263,
-          "leading_T10Y3M": 8.637,
-          "RES_VS_NONRES_SPREAD": 8.459
+          "RESIDENTIAL_INV_Z": 9.423,
+          "RESIDENTIAL_INV_YOY": 9.423,
+          "FFR_STANCE": 9.263
         },
         "top_critical": {
           "monetary_DFF": 10.79
@@ -61,9 +61,9 @@
       "status": "WARNING",
       "details": {
         "window_months": 24,
-        "mean_predicted": 0.3945,
+        "mean_predicted": 0.3925,
         "observed_rate": 0.0,
-        "calibration_gap": 0.3945,
+        "calibration_gap": 0.3925,
         "observed_months": 6
       }
     },
@@ -77,7 +77,7 @@
       "status": "OK",
       "details": {
         "latest_date": "2026-10-31",
-        "days_old": -6
+        "days_old": 1
       }
     }
   },
@@ -85,17 +85,17 @@
     {
       "level": "WARNING",
       "check": "model_disagreement",
-      "message": "High model disagreement: spread=45.0%. Models: Probit=30.0%, RandomForest=44.9%, XGBoost=44.0%, MarkovSwitching=50.0%, HamiltonBenchmark=5.0%, ChauvetPigerBenchmark=5.0%, WrightProbit=47.7%"
+      "message": "High model disagreement: spread=45.0%. Models: Probit=30.0%, RandomForest=47.2%, XGBoost=42.0%, MarkovSwitching=50.0%, HamiltonBenchmark=5.0%, ChauvetPigerBenchmark=5.0%, WrightProbit=47.7%"
     },
     {
       "level": "CRITICAL",
       "check": "feature_drift",
-      "message": "32 features drifted (1 CRITICAL \u226510.0, 25 WARNING \u22655.0, 6 INFO \u22650.25). Top: monetary_DFF=10.79"
+      "message": "31 features drifted (1 CRITICAL \u226510.0, 24 WARNING \u22655.0, 6 INFO \u22650.25). Top: monetary_DFF=10.79"
     },
     {
       "level": "INFO",
       "check": "calibration",
-      "message": "Calibration gap: predicted mean=39.4%, observed rate=0.0% over last 24 months"
+      "message": "Calibration gap: predicted mean=39.3%, observed rate=0.0% over last 24 months"
     }
   ],
   "alert_count": 3,

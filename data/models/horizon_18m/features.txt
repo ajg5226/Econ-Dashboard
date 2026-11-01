@@ -24,9 +24,9 @@ leading_PRFI_MoM
 leading_PERMIT_6M
 RESIDENTIAL_INV_DECLINING
 leading_ICSA_6M
+leading_TB3MS_Vol6M
 lagging_CPIAUCSL_Vol6M
 leading_T10Y3M_RECONSTRUCTED_MASK_AT_RISK
-leading_TB3MS_Vol6M
 leading_PRFI
 financial_ANFCI
 GOODS_YoY_MINUS_SERV_YoY
